@@ -4,6 +4,7 @@
 // Taste dials: VARIANCE 5 / MOTION 3 / DENSITY 5
 
 import { redirect } from 'next/navigation'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 
 export default async function Home() {
@@ -57,10 +58,24 @@ function LandingStub() {
         <h1 className="text-4xl md:text-5xl font-semibold tracking-tight leading-[1.1] mb-4">
           Chit Fund Analytics
         </h1>
-        <p className="text-[#94A3B8] text-lg max-w-[55ch] leading-relaxed">
+        <p className="text-[#94A3B8] text-lg max-w-[55ch] leading-relaxed mb-8">
           Private family chit fund tracker. Database schema and security
           foundation established. UI and analytics arrive in later phases.
         </p>
+        <div className="flex items-center gap-4">
+          <Link 
+            href="/login"
+            className="inline-flex h-10 items-center justify-center rounded-md bg-[#E2E8F0] px-6 text-sm font-medium text-[#0F172A] transition-colors hover:bg-white focus:outline-none focus:ring-2 focus:ring-[#059669] focus:ring-offset-2 focus:ring-offset-[#0F172A]"
+          >
+            Sign in
+          </Link>
+          <Link 
+            href="/login?mode=signup"
+            className="inline-flex h-10 items-center justify-center rounded-md border border-[rgba(255,255,255,0.12)] bg-transparent px-6 text-sm font-medium text-[#E2E8F0] transition-colors hover:bg-[rgba(255,255,255,0.06)] focus:outline-none focus:ring-2 focus:ring-[#059669] focus:ring-offset-2 focus:ring-offset-[#0F172A]"
+          >
+            Create account
+          </Link>
+        </div>
       </header>
 
       {/* Two-column layout */}

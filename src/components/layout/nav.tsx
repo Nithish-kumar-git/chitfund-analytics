@@ -2,8 +2,9 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, BookOpen, Plus, X, Menu } from 'lucide-react'
+import { LayoutDashboard, BookOpen, Plus, X, Menu, LogOut } from 'lucide-react'
 import { useState } from 'react'
+import { logoutAction } from '@/lib/auth/actions'
 
 interface NavItem {
   href: string
@@ -59,8 +60,8 @@ export function Sidebar() {
         ))}
       </nav>
 
-      {/* Add Chit CTA */}
-      <div className="px-3 pb-5">
+      {/* Actions */}
+      <div className="px-3 pb-5 flex flex-col gap-2">
         <Link
           href="/chits/new"
           className="flex items-center justify-center gap-2 w-full px-4 py-2.5 rounded-xl bg-[#1D4ED8] hover:bg-[#1E40AF] text-white text-sm font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B82F6] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0A1120]"
@@ -68,6 +69,12 @@ export function Sidebar() {
           <Plus className="h-4 w-4" aria-hidden="true" />
           Add Chit
         </Link>
+        <form action={logoutAction}>
+          <button type="submit" className="flex items-center justify-center gap-2 w-full px-4 py-2.5 rounded-xl text-sm font-medium text-[#94A3B8] hover:bg-[#1E293B] hover:text-[#E2E8F0] transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B82F6]">
+            <LogOut className="h-4 w-4" aria-hidden="true" />
+            Sign out
+          </button>
+        </form>
       </div>
     </aside>
   )
@@ -132,7 +139,7 @@ export function MobileTopbar() {
           ))}
         </nav>
 
-        <div className="px-3 pb-6">
+        <div className="px-3 pb-6 flex flex-col gap-2">
           <Link
             href="/chits/new"
             onClick={close}
@@ -141,6 +148,12 @@ export function MobileTopbar() {
             <Plus className="h-4 w-4" aria-hidden="true" />
             Add Chit
           </Link>
+          <form action={logoutAction}>
+            <button type="submit" onClick={close} className="flex items-center justify-center gap-2 w-full px-4 py-2.5 rounded-xl text-sm font-medium text-[#94A3B8] hover:bg-[#1E293B] hover:text-[#E2E8F0] transition-colors duration-150">
+              <LogOut className="h-4 w-4" aria-hidden="true" />
+              Sign out
+            </button>
+          </form>
         </div>
       </div>
     </>
