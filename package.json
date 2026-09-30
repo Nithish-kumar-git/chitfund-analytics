@@ -11,13 +11,17 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@hookform/resolvers": "^5.9.1",
     "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.117.2",
     "big.js": "^7.0.1",
+    "lucide-react": "^1.49.0",
     "next": "16.3.6",
     "playwright": "^1.63.0",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "react-hook-form": "^7.89.0",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

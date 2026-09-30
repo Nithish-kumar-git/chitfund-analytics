@@ -3,6 +3,20 @@
 // Design: personal finance tracker — dark navy, trust blue, profit green.
 // Taste dials: VARIANCE 5 / MOTION 3 / DENSITY 5
 
+import { redirect } from 'next/navigation'
+import { createClient } from '@/lib/supabase/server'
+
+export default async function Home() {
+  // Authenticated users go directly to the dashboard
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (user) redirect('/dashboard')
+
+  // Unauthenticated — fall through to the Phase 1 landing stub below
+  return <LandingStub />
+}
+
+
 const SCHEMA_TABLES = [
   { name: "profiles",        purpose: "Auth-linked user profile",           icon: "👤" },
   { name: "chit_companies",  purpose: "Optional — chit company registry",   icon: "🏢" },
@@ -31,7 +45,7 @@ const UNKNOWN_RULES = [
   "Legal / industry thallu bounds",
 ]
 
-export default function Home() {
+function LandingStub() {
   return (
     <main className="min-h-[100dvh] flex flex-col px-6 py-16 max-w-5xl mx-auto w-full">
 
