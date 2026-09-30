@@ -96,7 +96,15 @@ export default async function ChitDetailPage({ params }: PageProps) {
             <p className="text-sm text-[#475569] mt-0.5">{typedChit.group_label}</p>
           )}
         </div>
-        <StatusBadge status={typedChit.status} />
+        <div className="flex flex-col items-end gap-3">
+          <StatusBadge status={typedChit.status} />
+          <Link
+            href={`/chits/${typedChit.id}/ingest`}
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#3B82F6] px-4 py-2 text-sm font-medium text-white hover:bg-[#2563EB] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
+            Add WhatsApp Round
+          </Link>
+        </div>
       </header>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
