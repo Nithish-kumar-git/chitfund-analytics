@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useParams } from 'next/navigation'
 import Link from 'next/link'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -12,8 +12,10 @@ import { ArrowLeft, AlertTriangle, CheckCircle, Info } from 'lucide-react'
 import { processIngestionText, confirmIngestion } from './actions'
 import type { IngestionResult } from '@/lib/ingestion/types'
 
-export default function IngestPage({ params }: { params: { id: string } }) {
+export default function IngestPage() {
   const router = useRouter()
+  const routeParams = useParams<{ id: string }>()
+  const chitId = routeParams?.id || ''
   const [rawText, setRawText] = useState('')
   const [roundNumber, setRoundNumber] = useState('')
   const [isPending, startTransition] = useTransition()
@@ -24,7 +26,7 @@ export default function IngestPage({ params }: { params: { id: string } }) {
   const handleAnalyze = () => {
     setError(null)
     startTransition(async () => {
-      const res = await processIngestionText(params.id, rawText, roundNumber)
+      const res = await processIngestionText(chitId, rawText, roundNumber)
       if (!res.success) {
         setError(res.error || 'Failed to process')
       } else if (res.result) {
@@ -46,14 +48,14 @@ export default function IngestPage({ params }: { params: { id: string } }) {
     startTransition(async () => {
       const parsedRound = parseInt(roundNumber, 10)
       const res = await confirmIngestion(
-        params.id, 
+        chitId, 
         rawText,
         !isNaN(parsedRound) ? parsedRound : undefined
       )
       if (!res.success) {
         setError(res.error || 'Failed to confirm')
       } else {
-        router.push(`/chits/${params.id}`)
+        router.push(`/chits/${chitId}`)
       }
     })
   }
@@ -73,7 +75,7 @@ export default function IngestPage({ params }: { params: { id: string } }) {
   return (
     <div className="max-w-2xl">
       <Link
-        href={`/chits/${params.id}`}
+        href={`/chits/${chitId}`}
         className="inline-flex items-center gap-1.5 text-xs text-[#64748B] hover:text-[#94A3B8] transition-colors mb-6"
       >
         <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
