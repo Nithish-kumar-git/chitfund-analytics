@@ -119,12 +119,20 @@ export default async function ChitDetailPage({ params }: PageProps) {
             </Link>
             <StatusBadge status={typedChit.status} />
           </div>
-          <Link
-            href={`/chits/${typedChit.id}/ingest`}
-            className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#3B82F6] px-4 py-2 text-sm font-medium text-white hover:bg-[#2563EB] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-          >
-            Add WhatsApp Round
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link
+              href={`/chits/${typedChit.id}/queue`}
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#1e293b] border border-[rgba(255,255,255,0.1)] px-4 py-2 text-sm font-medium text-[#CBD5E1] hover:bg-[#334155] hover:text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              Review Queue
+            </Link>
+            <Link
+              href={`/chits/${typedChit.id}/ingest`}
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#3B82F6] px-4 py-2 text-sm font-medium text-white hover:bg-[#2563EB] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              Add WhatsApp Round
+            </Link>
+          </div>
         </div>
       </header>
 

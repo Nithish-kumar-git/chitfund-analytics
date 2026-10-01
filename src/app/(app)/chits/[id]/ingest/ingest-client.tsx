@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ArrowLeft, AlertTriangle, CheckCircle, Info } from 'lucide-react'
 import { processIngestionText, confirmIngestion } from './actions'
+import { addToQueue } from '../queue/actions'
 import type { IngestionResult } from '@/lib/ingestion/types'
 
 // chitId is the server-verified chit UUID passed as a prop from the Server Component.
@@ -60,6 +61,18 @@ export function IngestClient({ chitId }: IngestClientProps) {
         setError(res.error || 'Failed to confirm')
       } else {
         router.push(`/chits/${chitId}`)
+      }
+    })
+  }
+
+  const handleAddToQueue = (text: string) => {
+    setError(null)
+    startTransition(async () => {
+      const res = await addToQueue(chitId, text)
+      if (!res.success) {
+        setError(res.error || 'Failed to add to queue')
+      } else {
+        router.push(`/chits/${chitId}/queue`)
       }
     })
   }
@@ -229,7 +242,15 @@ export function IngestClient({ chitId }: IngestClientProps) {
             )}
           </div>
 
-          <div className="p-4 border-t border-[#334155] bg-[#0F172A] flex justify-end">
+          <div className="p-4 border-t border-[#334155] bg-[#0F172A] flex justify-end gap-3">
+            <Button
+              variant="secondary"
+              onClick={() => handleAddToQueue(rawText)}
+              disabled={isPending || !rawText.trim()}
+              className="w-full sm:w-auto"
+            >
+              {isPending ? 'Processing...' : 'Save to Queue'}
+            </Button>
             <Button
               onClick={handleConfirm}
               disabled={isPending || result.status === 'PARSE_FAILED' || result.status === 'DUPLICATE' || !roundNumber}

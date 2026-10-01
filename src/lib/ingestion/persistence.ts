@@ -11,16 +11,16 @@ export interface PersistenceResult {
 
 /**
  * Persists a user-confirmed ingestion into the database.
- * 
+ *
  * TRANSACTION LIMITATION:
  * The current Supabase schema does not have a custom RPC for atomic ingestion.
  * Therefore, we insert sequentially:
  * 1. auction_events (if present)
  * 2. ledger_entries (if present, linking to auction)
  * 3. source_messages (linking to auction)
- * 
- * If an intermediate step fails, it could result in partial data (e.g. auction saved 
- * but source_message failed). In a production environment, an RPC function should 
+ *
+ * If an intermediate step fails, it could result in partial data (e.g. auction saved
+ * but source_message failed). In a production environment, an RPC function should
  * be created to wrap these three inserts in a single Postgres transaction.
  */
 export async function persistConfirmedIngestion(
@@ -53,7 +53,7 @@ export async function persistConfirmedIngestion(
         })
         .select('id')
         .single()
-        
+
       if (auctionError) {
         const errorString = `${auctionError.message || ''} ${auctionError.details || ''}`
         if (auctionError.code === '23505' && errorString.includes('auction_events_chit_round_uk')) {
@@ -79,7 +79,7 @@ export async function persistConfirmedIngestion(
         })
         .select('id')
         .single()
-        
+
       if (ledgerError) {
         // Rollback attempt for auction? Not perfectly safe without RPC.
         return { success: false, error: `Failed to insert ledger_entry: ${ledgerError.message}` }
@@ -87,32 +87,49 @@ export async function persistConfirmedIngestion(
       ledgerEntryId = ledger.id
     }
 
-    // 3. Insert source message
-    const { data: source, error: sourceError } = await supabase
-      .from('source_messages')
-      .insert({
-        profile_id: confirmed.profile_id,
-        chit_id: confirmed.chit_id,
-        raw_text: confirmed.raw_text,
-        received_at: confirmed.received_at?.toISOString(),
-        parse_status: confirmed.parse_status,
-        content_hash: confirmed.content_hash,
-        matched_auction_event_id: auctionEventId
-      })
-      .select('id')
-      .single()
+    // 3. Insert or update source message
+    let sourceMessageId = confirmed.existing_source_message_id
 
-    if (sourceError) {
-      return { success: false, error: `Failed to insert source_message: ${sourceError.message}` }
+    if (sourceMessageId) {
+      const { error: sourceError } = await supabase
+        .from('source_messages')
+        .update({
+          parse_status: confirmed.parse_status,
+          matched_auction_event_id: auctionEventId
+        })
+        .eq('id', sourceMessageId)
+
+      if (sourceError) {
+        return { success: false, error: `Failed to update source_message: ${sourceError.message}` }
+      }
+    } else {
+      const { data: source, error: sourceError } = await supabase
+        .from('source_messages')
+        .insert({
+          profile_id: confirmed.profile_id,
+          chit_id: confirmed.chit_id,
+          raw_text: confirmed.raw_text,
+          received_at: confirmed.received_at?.toISOString(),
+          parse_status: confirmed.parse_status,
+          content_hash: confirmed.content_hash,
+          matched_auction_event_id: auctionEventId
+        })
+        .select('id')
+        .single()
+
+      if (sourceError) {
+        return { success: false, error: `Failed to insert source_message: ${sourceError.message}` }
+      }
+      sourceMessageId = source.id
     }
 
     // 4. Update the source_message_id on the auction event to complete the circular link
-    if (auctionEventId) {
+    if (auctionEventId && sourceMessageId) {
       const { error: updateError } = await supabase
         .from('auction_events')
-        .update({ source_message_id: source.id })
+        .update({ source_message_id: sourceMessageId })
         .eq('id', auctionEventId)
-        
+
       if (updateError) {
         // Not fatal, but log it
         console.warn('Failed to link source_message to auction_event', updateError)
@@ -121,7 +138,7 @@ export async function persistConfirmedIngestion(
 
     return {
       success: true,
-      source_message_id: source.id,
+      source_message_id: sourceMessageId,
       auction_event_id: auctionEventId,
       ledger_entry_id: ledgerEntryId
     }

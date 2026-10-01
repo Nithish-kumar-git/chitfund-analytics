@@ -90,7 +90,9 @@ export interface ConfirmedIngestion {
   received_at?: Date
   content_hash: string
   parse_status: 'PARSED' | 'PENDING' | 'PARSE_FAILED'
-  
+
+  existing_source_message_id?: string
+
   auction_event?: ConfirmedAuctionEvent
   ledger_entry?: ConfirmedLedgerEntry
 }
