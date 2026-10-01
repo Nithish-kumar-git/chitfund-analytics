@@ -86,7 +86,7 @@ export default async function ChitDetailPage({ params }: PageProps) {
     .order('round_number', { ascending: false })
 
   const typedAuctionEvents = (auctionEvents || []) as AuctionEvent[]
-  const chitSummary = computeChitSummary(typedAuctionEvents)
+  const chitSummary = computeChitSummary(typedAuctionEvents, typedChit.duration_months)
 
   return (
     <div>

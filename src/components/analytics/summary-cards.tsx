@@ -3,7 +3,7 @@ import { ChitSummary, PortfolioSummary } from '@/lib/analytics/summary';
 import { TrendingDown, TrendingUp, Activity, IndianRupee, Layers } from 'lucide-react';
 
 export function ChitSummaryCards({ summary }: { summary: ChitSummary }) {
-  if (summary.normalRoundsCompleted === 0) {
+  if (summary.roundsRecorded === 0) {
     return null;
   }
 
@@ -15,7 +15,7 @@ export function ChitSummaryCards({ summary }: { summary: ChitSummary }) {
           Rounds
         </div>
         <div className="text-2xl font-semibold text-[#E2E8F0]">
-          {summary.normalRoundsCompleted} <span className="text-sm text-[#475569] font-normal">/ {summary.totalRounds}</span>
+          {summary.roundsRecorded} <span className="text-sm text-[#475569] font-normal">/ {summary.totalRounds}</span>
         </div>
       </Card>
       

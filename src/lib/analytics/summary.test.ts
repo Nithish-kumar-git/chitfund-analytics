@@ -5,9 +5,10 @@ import { AuctionEvent, Chit } from '@/types/database';
 describe('Analytics Summary', () => {
   describe('computeChitSummary', () => {
     it('returns empty stats for no events', () => {
-      const summary = computeChitSummary([]);
+      const summary = computeChitSummary([], 25);
       expect(summary).toEqual({
-        totalRounds: 0,
+        roundsRecorded: 0,
+        totalRounds: 25,
         normalRoundsCompleted: 0,
         avgThallu: null,
         maxThallu: null,
@@ -16,7 +17,7 @@ describe('Analytics Summary', () => {
       });
     });
 
-    it('calculates stats for NORMAL rounds correctly', () => {
+    it('calculates stats for NORMAL rounds correctly and uses durationMonths for totalRounds', () => {
       const events: Partial<AuctionEvent>[] = [
         { event_type: 'NORMAL', thallu: 1000, non_winner_payment: 2000 },
         { event_type: 'NORMAL', thallu: 3000, non_winner_payment: 2000 },
@@ -24,9 +25,10 @@ describe('Analytics Summary', () => {
         { event_type: 'NORMAL', thallu: 500, non_winner_payment: 2000 },
       ];
 
-      const summary = computeChitSummary(events as AuctionEvent[]);
+      const summary = computeChitSummary(events as AuctionEvent[], 25);
 
-      expect(summary.totalRounds).toBe(4);
+      expect(summary.roundsRecorded).toBe(4);
+      expect(summary.totalRounds).toBe(25);
       expect(summary.normalRoundsCompleted).toBe(3);
       expect(summary.avgThallu).toBe((1000 + 3000 + 500) / 3);
       expect(summary.maxThallu).toBe(3000);
@@ -40,8 +42,10 @@ describe('Analytics Summary', () => {
         { event_type: 'NORMAL', thallu: 1000, non_winner_payment: 2000 },
       ];
 
-      const summary = computeChitSummary(events as AuctionEvent[]);
+      const summary = computeChitSummary(events as AuctionEvent[], 20);
 
+      expect(summary.roundsRecorded).toBe(2);
+      expect(summary.totalRounds).toBe(20);
       expect(summary.normalRoundsCompleted).toBe(2);
       expect(summary.avgThallu).toBe(1000);
       expect(summary.maxThallu).toBe(1000);

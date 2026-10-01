@@ -1,6 +1,7 @@
 import { AuctionEvent, Chit } from '@/types/database';
 
 export interface ChitSummary {
+  roundsRecorded: number;
   totalRounds: number;
   normalRoundsCompleted: number;
   avgThallu: number | null;
@@ -9,7 +10,7 @@ export interface ChitSummary {
   totalNonWinnerPayment: number;
 }
 
-export function computeChitSummary(events: AuctionEvent[]): ChitSummary {
+export function computeChitSummary(events: AuctionEvent[], durationMonths: number = 0): ChitSummary {
   let normalRoundsCount = 0;
   let thalluCount = 0;
   let sumThallu = 0;
@@ -41,7 +42,8 @@ export function computeChitSummary(events: AuctionEvent[]): ChitSummary {
   const avgThallu = thalluCount > 0 ? sumThallu / thalluCount : null;
 
   return {
-    totalRounds: events.length,
+    roundsRecorded: events.length,
+    totalRounds: durationMonths,
     normalRoundsCompleted: normalRoundsCount,
     avgThallu,
     maxThallu,
