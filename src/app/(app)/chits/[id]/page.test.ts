@@ -185,4 +185,46 @@ describe('Chit Detail Page — Phase 5A (Read-Only History)', () => {
     expect(stringified).toContain('"Round ",2')
     expect(stringified).toContain('Normal auction calculations are not applicable for ","SPECIAL_NO_AUCTION",')
   })
+
+  it('renders multiple rounds correctly in descending order, including mixed event types', async () => {
+    const round3 = {
+      id: 'round-3', chit_id: CHIT_ID, round_number: 3, event_type: 'NORMAL',
+      thallu: 10000, commission: 5000, member_thallu: 250, non_winner_payment: 4750, calculation_status: 'VERIFIED_FORMULA'
+    }
+    const round2 = {
+      id: 'round-2', chit_id: CHIT_ID, round_number: 2, event_type: 'SPECIAL_NO_AUCTION',
+      thallu: null, commission: null, member_thallu: null, non_winner_payment: null, calculation_status: 'INDUSTRY_DEFAULT'
+    }
+    const round1 = {
+      id: 'round-1', chit_id: CHIT_ID, round_number: 1, event_type: 'UNKNOWN',
+      thallu: null, commission: null, member_thallu: null, non_winner_payment: null, calculation_status: 'INDUSTRY_DEFAULT'
+    }
+
+    // They are returned in descending order by the mock, which matches the page query order
+    mockOrder.mockResolvedValueOnce({ data: [round3, round2, round1], error: null })
+
+    const result: any = await ChitDetailPage({ params: Promise.resolve({ id: CHIT_ID }) })
+    const stringified = JSON.stringify(result, getCircularReplacer())
+
+    // Check that all rounds are present
+    expect(stringified).toContain('"Round ",3')
+    expect(stringified).toContain('"Round ",2')
+    expect(stringified).toContain('"Round ",1')
+
+    // Check specific financial values for Round 3
+    expect(stringified).toContain('10,000')
+    expect(stringified).toContain('4,750')
+
+    // Check disclaimers for Special/Unknown
+    expect(stringified).toContain('Normal auction calculations are not applicable for ","SPECIAL_NO_AUCTION",')
+    expect(stringified).toContain('Normal auction calculations are not applicable for ","UNKNOWN",')
+
+    // Verify ordering by checking indexOf in stringified tree
+    const idx3 = stringified.indexOf('"Round ",3')
+    const idx2 = stringified.indexOf('"Round ",2')
+    const idx1 = stringified.indexOf('"Round ",1')
+
+    expect(idx3).toBeLessThan(idx2)
+    expect(idx2).toBeLessThan(idx1)
+  })
 })

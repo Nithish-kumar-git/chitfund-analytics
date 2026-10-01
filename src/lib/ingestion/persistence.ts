@@ -40,11 +40,11 @@ export async function persistConfirmedIngestion(
           chit_id: confirmed.chit_id,
           round_number: confirmed.auction_event.round_number,
           event_type: confirmed.auction_event.event_type,
-          thallu: confirmed.auction_event.thallu,
-          commission: confirmed.auction_event.commission,
-          net_thallu: confirmed.auction_event.net_thallu,
-          member_thallu: confirmed.auction_event.member_thallu,
-          non_winner_payment: confirmed.auction_event.non_winner_payment,
+          thallu: confirmed.auction_event.thallu ?? null,
+          commission: confirmed.auction_event.commission ?? null,
+          net_thallu: confirmed.auction_event.net_thallu ?? null,
+          member_thallu: confirmed.auction_event.member_thallu ?? null,
+          non_winner_payment: confirmed.auction_event.non_winner_payment ?? null,
           won_by_us: confirmed.auction_event.won_by_us,
           our_payout_amount: confirmed.auction_event.our_payout_amount,
           calculation_status: confirmed.auction_event.calculation_status,
@@ -55,6 +55,10 @@ export async function persistConfirmedIngestion(
         .single()
         
       if (auctionError) {
+        const errorString = `${auctionError.message || ''} ${auctionError.details || ''}`
+        if (auctionError.code === '23505' && errorString.includes('auction_events_chit_round_uk')) {
+          return { success: false, error: `Round ${confirmed.auction_event.round_number} already exists for this chit.` }
+        }
         return { success: false, error: `Failed to insert auction_event: ${auctionError.message}` }
       }
       auctionEventId = auction.id

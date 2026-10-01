@@ -302,4 +302,50 @@ describe('Ingestion Server Actions — Phase 4B routing fix', () => {
       expect(persistConfirmedIngestion).not.toHaveBeenCalled()
     })
   })
+
+  describe('Phase 5B — Multi-Round Testing', () => {
+    it('ingests Round 1 successfully, then ingests Round 2 successfully for the same chit', async () => {
+      // Simulate Round 1
+      mockSingle.mockResolvedValueOnce({ data: VALID_CHIT })
+      mockSingle.mockResolvedValueOnce({ data: null }) // Not a duplicate hash
+      mockSingle.mockResolvedValueOnce({ data: null }) // Round 1 doesn't exist
+      vi.mocked(persistConfirmedIngestion).mockResolvedValueOnce({ success: true })
+
+      const result1 = await confirmIngestion(REAL_UUID, NORMAL_MSG, 1)
+      expect(result1.success).toBe(true)
+
+      // Simulate Round 2
+      mockSingle.mockResolvedValueOnce({ data: VALID_CHIT })
+      mockSingle.mockResolvedValueOnce({ data: null }) // Not a duplicate hash
+      mockSingle.mockResolvedValueOnce({ data: null }) // Round 2 doesn't exist
+      vi.mocked(persistConfirmedIngestion).mockResolvedValueOnce({ success: true })
+
+      const result2 = await confirmIngestion(REAL_UUID, NORMAL_MSG, 2)
+      expect(result2.success).toBe(true)
+
+      expect(persistConfirmedIngestion).toHaveBeenCalledTimes(2)
+    })
+
+    it('blocks Round 1 ingestion if Round 1 already exists, even if the message hash is different', async () => {
+      mockSingle.mockResolvedValueOnce({ data: VALID_CHIT })
+      mockSingle.mockResolvedValueOnce({ data: null }) // New text, different hash
+      mockSingle.mockResolvedValueOnce({ data: { id: 'existing-round-1' } }) // Round 1 exists
+
+      const result = await confirmIngestion(REAL_UUID, NORMAL_MSG, 1)
+      expect(result.success).toBe(false)
+      expect(result.error).toBe('Round 1 already exists for this chit.')
+      expect(persistConfirmedIngestion).not.toHaveBeenCalled()
+    })
+
+    it('allows round gaps: Round 1 exists -> Round 5 is ingested', async () => {
+      // Simulate Round 5 ingestion directly
+      mockSingle.mockResolvedValueOnce({ data: VALID_CHIT })
+      mockSingle.mockResolvedValueOnce({ data: null }) // Not a duplicate hash
+      mockSingle.mockResolvedValueOnce({ data: null }) // Round 5 doesn't exist
+      vi.mocked(persistConfirmedIngestion).mockResolvedValueOnce({ success: true })
+
+      const result = await confirmIngestion(REAL_UUID, NORMAL_MSG, 5)
+      expect(result.success).toBe(true)
+    })
+  })
 })
