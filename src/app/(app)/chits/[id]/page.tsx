@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound, redirect } from 'next/navigation'
-import type { Chit, ChitCompany } from '@/types/database'
+import type { Chit, ChitCompany, AuctionEvent } from '@/types/database'
 import { Card } from '@/components/ui/card'
 import Link from 'next/link'
 import { ArrowLeft, Calendar, Users, Layers, Percent, FileText } from 'lucide-react'
@@ -75,6 +75,15 @@ export default async function ChitDetailPage({ params }: PageProps) {
       .single()
     companyName = (company as Pick<ChitCompany, 'name'> | null)?.name ?? null
   }
+
+  // Fetch auction events
+  const { data: auctionEvents } = await supabase
+    .from('auction_events')
+    .select('*')
+    .eq('chit_id', id)
+    .order('round_number', { ascending: false })
+
+  const typedAuctionEvents = (auctionEvents || []) as AuctionEvent[]
 
   return (
     <div>
@@ -185,19 +194,71 @@ export default async function ChitDetailPage({ params }: PageProps) {
         </Card>
       </div>
 
-      {/* Placeholder areas for future phases */}
+      {/* Auction History */}
       <div className="mt-8 flex flex-col gap-4">
         <div className="flex items-center gap-2 mb-2">
-          <FileText className="h-4 w-4 text-[#334155]" aria-hidden="true" />
-          <span className="text-xs font-mono uppercase tracking-widest text-[#334155]">
-            Auction History · Payment Ledger · Analytics
+          <FileText className="h-4 w-4 text-[#3B82F6]" aria-hidden="true" />
+          <span className="text-xs font-mono uppercase tracking-widest text-[#475569]">
+            Auction History
           </span>
         </div>
-        <div className="rounded-xl border border-dashed border-[rgba(255,255,255,0.06)] px-5 py-8 text-center">
-          <p className="text-xs text-[#334155]">
-            Auction history and payment ledger will appear here in a later phase.
-          </p>
-        </div>
+
+        {typedAuctionEvents.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-[rgba(255,255,255,0.06)] px-5 py-8 text-center">
+            <p className="text-xs text-[#334155]">
+              No rounds recorded yet.
+            </p>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {typedAuctionEvents.map((round) => (
+              <Card key={round.id} className="p-4">
+                <div className="flex flex-wrap items-center justify-between gap-4 mb-3 pb-3 border-b border-[rgba(255,255,255,0.05)]">
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm font-semibold text-[#E2E8F0]">Round {round.round_number}</span>
+                    <StatusBadge status={round.event_type} />
+                  </div>
+                  {round.calculation_status && round.calculation_status !== 'INDUSTRY_DEFAULT' && (
+                    <span className="text-xs text-[#64748B] font-mono">{round.calculation_status}</span>
+                  )}
+                </div>
+
+                {['UNKNOWN', 'FINAL', 'SPECIAL_NO_AUCTION'].includes(round.event_type) ? (
+                  <p className="text-sm text-[#94A3B8]">
+                    Normal auction calculations are not applicable for {round.event_type} events.
+                  </p>
+                ) : (
+                  <dl className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div>
+                      <dt className="text-xs text-[#64748B] font-mono uppercase tracking-wide">Thallu</dt>
+                      <dd className="text-sm text-[#E2E8F0]">
+                        {round.thallu != null ? `₹${Number(round.thallu).toLocaleString('en-IN')}` : <span className="text-[#334155] italic">—</span>}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs text-[#64748B] font-mono uppercase tracking-wide">Commission</dt>
+                      <dd className="text-sm text-[#E2E8F0]">
+                        {round.commission != null ? `₹${Number(round.commission).toLocaleString('en-IN')}` : <span className="text-[#334155] italic">—</span>}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs text-[#64748B] font-mono uppercase tracking-wide">Member Thallu</dt>
+                      <dd className="text-sm text-[#E2E8F0]">
+                        {round.member_thallu != null ? `₹${Number(round.member_thallu).toLocaleString('en-IN')}` : <span className="text-[#334155] italic">—</span>}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs text-[#64748B] font-mono uppercase tracking-wide">Installment Due</dt>
+                      <dd className="text-sm text-[#4ade80] font-medium">
+                        {round.non_winner_payment != null ? `₹${Number(round.non_winner_payment).toLocaleString('en-IN')}` : <span className="text-[#334155] italic">—</span>}
+                      </dd>
+                    </div>
+                  </dl>
+                )}
+              </Card>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )
