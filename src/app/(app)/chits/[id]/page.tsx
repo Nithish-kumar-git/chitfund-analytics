@@ -3,7 +3,9 @@ import { notFound, redirect } from 'next/navigation'
 import type { Chit, ChitCompany, AuctionEvent } from '@/types/database'
 import { Card } from '@/components/ui/card'
 import Link from 'next/link'
-import { ArrowLeft, Calendar, Users, Layers, Percent, FileText, Pencil } from 'lucide-react'
+import { ArrowLeft, Calendar, Users, Layers, Percent, FileText, Pencil, Activity } from 'lucide-react'
+import { computeChitSummary } from '@/lib/analytics/summary'
+import { ChitSummaryCards } from '@/components/analytics/summary-cards'
 
 function DetailRow({ label, value }: { label: string; value: string | null | undefined }) {
   return (
@@ -84,6 +86,7 @@ export default async function ChitDetailPage({ params }: PageProps) {
     .order('round_number', { ascending: false })
 
   const typedAuctionEvents = (auctionEvents || []) as AuctionEvent[]
+  const chitSummary = computeChitSummary(typedAuctionEvents)
 
   return (
     <div>
@@ -201,6 +204,17 @@ export default async function ChitDetailPage({ params }: PageProps) {
             <DetailRow label="Notes" value={typedChit.notes} />
           </dl>
         </Card>
+      </div>
+
+      {/* Chit Progress & Auction Summary */}
+      <div className="mt-8">
+        <div className="flex items-center gap-2 mb-4">
+          <Activity className="h-4 w-4 text-[#3B82F6]" aria-hidden="true" />
+          <span className="text-xs font-mono uppercase tracking-widest text-[#475569]">
+            Progress & Summary
+          </span>
+        </div>
+        <ChitSummaryCards summary={chitSummary} />
       </div>
 
       {/* Auction History */}

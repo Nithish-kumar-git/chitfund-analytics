@@ -3,15 +3,9 @@ import type { Chit } from '@/types/database'
 import { BookOpen, TrendingUp } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import Link from 'next/link'
+import { computePortfolioSummary } from '@/lib/analytics/summary'
+import { PortfolioSummaryCards } from '@/components/analytics/summary-cards'
 
-function StatCard({ label, value }: { label: string; value: string | number }) {
-  return (
-    <Card>
-      <p className="text-xs font-mono uppercase tracking-wider text-[#64748B] mb-1">{label}</p>
-      <p className="text-2xl font-semibold text-[#E2E8F0]">{value}</p>
-    </Card>
-  )
-}
 
 export default async function DashboardPage() {
   const supabase = await createClient()
@@ -24,11 +18,7 @@ export default async function DashboardPage() {
     .select('id, name, status, face_value, base_installment')
     .order('created_at', { ascending: false })
 
-  const activeChits = (chits ?? []).filter((c: Pick<Chit, 'status'>) => c.status === 'ACTIVE')
-  const totalFaceValue = (chits ?? []).reduce(
-    (sum: number, c: Pick<Chit, 'face_value'>) => sum + Number(c.face_value),
-    0
-  )
+  const portfolioSummary = computePortfolioSummary((chits ?? []) as Chit[])
 
   return (
     <div>
@@ -40,18 +30,7 @@ export default async function DashboardPage() {
         </p>
       </header>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
-        <StatCard label="Total Chits" value={chits?.length ?? 0} />
-        <StatCard label="Active Chits" value={activeChits.length} />
-        <StatCard
-          label="Total Face Value"
-          value={
-            totalFaceValue > 0
-              ? `₹${totalFaceValue.toLocaleString('en-IN')}`
-              : '—'
-          }
-        />
-      </div>
+      <PortfolioSummaryCards summary={portfolioSummary} />
 
       {/* Recent chits */}
       <section aria-labelledby="recent-heading">
