@@ -38,13 +38,18 @@ export async function processIngestionText(
 
     // Check duplicate
     const hash = contentHash(normaliseMessage(rawText))
-    const { data: duplicateCheck } = await supabase
+    const { data: duplicateCheck, error: dupError } = await supabase
       .from('source_messages')
       .select('id')
       .eq('content_hash', hash)
       .eq('chit_id', chitId)
       .eq('profile_id', user.id)
-      .single()
+      .limit(1)
+      .maybeSingle()
+
+    if (dupError) {
+      return { success: false, error: 'Failed to check for duplicate messages.' }
+    }
 
     const isDuplicate = !!duplicateCheck
 
@@ -118,12 +123,17 @@ export async function confirmIngestion(
     }
 
     // Ensure duplicate round check
-    const { data: existingRound } = await supabase
+    const { data: existingRound, error: existingRoundError } = await supabase
       .from('auction_events')
       .select('id')
       .eq('chit_id', chitId)
       .eq('round_number', roundNumber)
-      .single()
+      .limit(1)
+      .maybeSingle()
+
+    if (existingRoundError) {
+      return { success: false, error: 'Failed to verify existing rounds.' }
+    }
 
     if (existingRound) {
       return { success: false, error: `Round ${roundNumber} already exists for this chit.` }

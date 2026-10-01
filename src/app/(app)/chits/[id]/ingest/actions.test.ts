@@ -8,7 +8,10 @@ import { persistConfirmedIngestion } from '@/lib/ingestion/persistence'
 const mockGetUser = vi.fn()
 const mockSelect = vi.fn()
 const mockEq = vi.fn()
-const mockSingle = vi.fn()
+const mockQueryEnd = vi.fn()
+const mockSingle = mockQueryEnd
+const mockLimit = vi.fn()
+const mockMaybeSingle = mockQueryEnd
 const mockInsert = vi.fn()
 const mockUpdate = vi.fn()
 
@@ -56,8 +59,10 @@ describe('Ingestion Server Actions — Phase 4B routing fix', () => {
     vi.clearAllMocks()
     mockGetUser.mockResolvedValue({ data: { user: { id: USER_ID } } })
     mockSelect.mockReturnValue({ eq: mockEq })
-    mockEq.mockReturnValue({ eq: mockEq, single: mockSingle })
+    mockEq.mockReturnValue({ eq: mockEq, single: mockSingle, limit: mockLimit })
+    mockLimit.mockReturnValue({ maybeSingle: mockMaybeSingle })
     mockSingle.mockResolvedValue({ data: null, error: null })
+    mockMaybeSingle.mockResolvedValue({ data: null, error: null })
   })
 
   // ── 1. Dynamic route receives a real UUID ────────────────────────────────
@@ -346,6 +351,55 @@ describe('Ingestion Server Actions — Phase 4B routing fix', () => {
 
       const result = await confirmIngestion(REAL_UUID, NORMAL_MSG, 5)
       expect(result.success).toBe(true)
+    })
+  })
+
+  describe('Phase 5C — Duplicate Source Message Detection', () => {
+    it('allows ingestion when no matching source_messages row exists (not duplicate)', async () => {
+      mockSingle.mockResolvedValueOnce({ data: VALID_CHIT })
+      mockSingle.mockResolvedValueOnce({ data: null, error: null }) // 0 rows
+
+      const result = await processIngestionText(REAL_UUID, NORMAL_MSG, '5')
+      expect(result.success).toBe(true)
+      expect(result.result?.status).not.toBe('DUPLICATE')
+    })
+
+    it('blocks ingestion as DUPLICATE when exactly one matching source_messages row exists', async () => {
+      mockSingle.mockResolvedValueOnce({ data: VALID_CHIT })
+      mockSingle.mockResolvedValueOnce({ data: { id: 'existing-msg-id' }, error: null })
+
+      const result = await processIngestionText(REAL_UUID, NORMAL_MSG, '5')
+      expect(result.success).toBe(true)
+      expect(result.result?.status).toBe('DUPLICATE')
+    })
+
+    it('blocks ingestion when at least one matching source_messages row exists', async () => {
+      // By using .limit(1).maybeSingle(), Supabase safely returns the first row
+      mockSingle.mockResolvedValueOnce({ data: VALID_CHIT })
+      mockSingle.mockResolvedValueOnce({ data: { id: 'first-msg-id' }, error: null })
+
+      const result = await processIngestionText(REAL_UUID, NORMAL_MSG, '5')
+      expect(result.success).toBe(true)
+      expect(result.result?.status).toBe('DUPLICATE')
+    })
+
+    it('fails closed when a database error occurs during duplicate check', async () => {
+      mockSingle.mockResolvedValueOnce({ data: VALID_CHIT })
+      mockSingle.mockResolvedValueOnce({ data: null, error: { message: 'Database connection lost' } })
+
+      const result = await processIngestionText(REAL_UUID, NORMAL_MSG, '5')
+      expect(result.success).toBe(false)
+      expect(result.error).toBe('Failed to check for duplicate messages.')
+    })
+
+    it('fails closed when a database error occurs during round duplicate check', async () => {
+      mockSingle.mockResolvedValueOnce({ data: VALID_CHIT })
+      mockSingle.mockResolvedValueOnce({ data: null, error: null }) // no source dup
+      mockSingle.mockResolvedValueOnce({ data: null, error: { message: 'Timeout' } }) // round check fails
+
+      const result = await confirmIngestion(REAL_UUID, NORMAL_MSG, 5)
+      expect(result.success).toBe(false)
+      expect(result.error).toBe('Failed to verify existing rounds.')
     })
   })
 })

@@ -66,7 +66,12 @@ export function IngestClient({ chitId }: IngestClientProps) {
 
   const renderMismatch = (label: string, stated?: number, calculated?: number) => {
     if (stated === calculated) {
-      return <span className="text-[#E2E8F0] font-mono">₹{stated ?? 'Not detected'}</span>
+      return (
+        <div className="flex flex-col gap-1">
+          <span className="text-[#E2E8F0] font-mono">Stated: ₹{stated ?? 'Not detected'}</span>
+          <span className="text-[#E2E8F0] font-mono">Calculated: ₹{calculated ?? 'Not calculated'}</span>
+        </div>
+      )
     }
     return (
       <div className="flex flex-col gap-1">
@@ -185,13 +190,13 @@ export function IngestClient({ chitId }: IngestClientProps) {
                   <div className="flex justify-between py-1 items-start">
                     <span className="text-[#64748B]">Thallu</span>
                     <div className="text-right">
-                      {renderMismatch('Thallu', result.parse_result.fields?.thallu)}
+                      <span className="text-[#E2E8F0] font-mono">₹{result.parse_result.fields?.thallu ?? 'Not detected'}</span>
                     </div>
                   </div>
                   <div className="flex justify-between py-1 items-start">
                     <span className="text-[#64748B]">Commission</span>
                     <div className="text-right">
-                      {renderMismatch('Commission', result.parse_result.fields?.commission)}
+                      <span className="text-[#E2E8F0] font-mono">₹{result.parse_result.fields?.commission ?? 'Not detected'}</span>
                     </div>
                   </div>
 
@@ -201,7 +206,9 @@ export function IngestClient({ chitId }: IngestClientProps) {
                       {renderMismatch(
                         'Member Thallu',
                         result.parse_result.fields?.stated_member_thallu,
-                        result.cross_check_result?.kind === 'mismatch' ? result.cross_check_result.calculated_member_thallu : undefined
+                        result.cross_check_result?.kind === 'mismatch' || result.cross_check_result?.kind === 'match'
+                          ? result.cross_check_result.calculated_member_thallu
+                          : undefined
                       )}
                     </div>
                   </div>
@@ -211,7 +218,9 @@ export function IngestClient({ chitId }: IngestClientProps) {
                       {renderMismatch(
                         'Installment Due',
                         result.parse_result.fields?.stated_payment,
-                        result.cross_check_result?.kind === 'mismatch' ? result.cross_check_result.calculated_non_winner_payment : undefined
+                        result.cross_check_result?.kind === 'mismatch' || result.cross_check_result?.kind === 'match'
+                          ? result.cross_check_result.calculated_non_winner_payment
+                          : undefined
                       )}
                     </div>
                   </div>
