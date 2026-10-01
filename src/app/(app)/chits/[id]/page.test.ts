@@ -134,6 +134,16 @@ describe('Chit Detail Page — Phase 5A (Read-Only History)', () => {
     expect(stringified).toContain('No rounds recorded yet.')
   })
 
+  it('renders an Edit Chit link navigating to /chits/[id]/edit in the header', async () => {
+    mockOrder.mockResolvedValueOnce({ data: [], error: null })
+
+    const result: any = await ChitDetailPage({ params: Promise.resolve({ id: CHIT_ID }) })
+    const stringified = JSON.stringify(result, getCircularReplacer())
+
+    expect(stringified).toContain('Edit Chit')
+    expect(stringified).toContain(`/chits/${CHIT_ID}/edit`)
+  })
+
   it('renders correctly with a NORMAL auction event showing financial data', async () => {
     const mockNormalRound = {
       id: 'round-1',
