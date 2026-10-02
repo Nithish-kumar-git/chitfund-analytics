@@ -2,6 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { processIngestionText, confirmIngestion } from './actions'
 import { persistConfirmedIngestion } from '@/lib/ingestion/persistence'
 
+// Phase 7F (atomicity): clearCashFlowVerification has been removed from
+// ingest/actions.ts. Verification invalidation is handled atomically by DB
+// triggers on auction_events and ledger_entries. No mock needed here.
+
 // ---------------------------------------------------------------------------
 // Mock dependencies
 // ---------------------------------------------------------------------------

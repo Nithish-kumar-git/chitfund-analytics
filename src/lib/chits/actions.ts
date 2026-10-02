@@ -4,11 +4,29 @@ import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { chitFormSchema, normaliseChitFormValues } from '@/lib/chits/schema'
+// Phase 7F: clearCashFlowVerification has been removed. The chit UPDATE path
+// inlines verified_at=null directly into the UPDATE statement when
+// financial/completion-relevant fields change — atomically in one SQL statement.
+// Trigger-based invalidation covers ledger_entries and auction_events inserts.
 
 export type ActionState =
   | { status: 'idle' }
   | { status: 'success'; chitId: string }
   | { status: 'error'; message: string; fieldErrors?: Record<string, string[]> }
+
+// Fields that affect cash-flow calculations or completion status.
+// A change to ANY of these must invalidate the verification.
+// Non-financial cosmetic fields (name, notes, group_label, company_id,
+// commission_notes, start_date) do NOT invalidate verification.
+const VERIFICATION_INVALIDATING_FIELDS = new Set([
+  'status',
+  'face_value',
+  'base_installment',
+  'duration_months',
+  'member_count',
+  'commission_type',
+  'commission_value',
+])
 
 function extractRawChitFormData(formData: FormData) {
   return {
@@ -131,13 +149,26 @@ export async function updateChitAction(
     }
   }
 
-  // 5. Normalise and update Supabase
-  // Strictly scope update to user's profile_id and the specific chitId
+  // 5. Determine whether any financial/completion-relevant field is being changed.
+  //    If so, inline verified_at=null and verified_by=null into the same UPDATE
+  //    statement so invalidation is atomic — a single SQL statement cannot
+  //    partially succeed.
   const values = normaliseChitFormValues(parseResult.data)
+  const touchesFinancialField = Object.keys(values).some((k) =>
+    VERIFICATION_INVALIDATING_FIELDS.has(k)
+  )
+
+  // Build the update payload. When financial fields are present, append the
+  // verification clearance in the same object so it goes in the same UPDATE.
+  const updatePayload: Record<string, unknown> = { ...values }
+  if (touchesFinancialField) {
+    updatePayload.verified_at = null
+    updatePayload.verified_by = null
+  }
 
   const { data, error: dbError } = await (supabase
     .from('chits') as any)
-    .update(values)
+    .update(updatePayload)
     .eq('id', chitId)
     .eq('profile_id', user.id)
     .select('id')

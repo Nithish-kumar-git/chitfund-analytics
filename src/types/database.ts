@@ -1,8 +1,9 @@
 // =============================================================================
 // Chit Fund Analytics — Database TypeScript Types
-// Generated to match supabase/migrations/20260928000001_initial_schema.sql
+// Matches supabase/migrations/20260928000001_initial_schema.sql
+//         supabase/migrations/20261003000001_add_cash_flow_verification.sql
 // =============================================================================
-// These types are hand-authored for Phase 1.
+// These types are hand-authored.
 // In later phases, replace with: npx supabase gen types typescript --linked
 // =============================================================================
 
@@ -74,6 +75,14 @@ export interface Chit {
   commission_value: number    // % or flat amount, NOT hardcoded as 2.5
   commission_notes: string | null
   notes: string | null
+  /**
+   * Phase 7F: Cash-flow verification.
+   * Both fields are null until the user explicitly verifies.
+   * Cleared (set to null) by any financial mutation path.
+   * Do NOT accept these values from the client — they are set/cleared server-side.
+   */
+  verified_at: string | null  // timestamptz — when the user verified cash flows
+  verified_by: string | null  // uuid — auth.users(id) of the verifying user
   created_at: string
   updated_at: string
 }
@@ -176,7 +185,10 @@ export type ProfileInsert = Omit<Profile, 'created_at' | 'updated_at'>
 
 export type ChitCompanyInsert = Omit<ChitCompany, 'id' | 'created_at' | 'updated_at'>
 
-export type ChitInsert = Omit<Chit, 'id' | 'created_at' | 'updated_at'>
+// verified_at / verified_by are excluded from ChitInsert — they cannot be set
+// at creation time; they are managed exclusively by verifyChitCashFlows and
+// the invalidation paths in mutation actions.
+export type ChitInsert = Omit<Chit, 'id' | 'created_at' | 'updated_at' | 'verified_at' | 'verified_by'>
 
 export type SourceMessageInsert = Omit<SourceMessage, 'id' | 'created_at' | 'updated_at'>
 

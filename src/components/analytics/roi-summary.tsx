@@ -1,6 +1,27 @@
+'use client'
+
+/**
+ * Phase 7E/7F — ROI Summary Card
+ *
+ * Server-computed ROI outcome is passed in as a prop. This component is a
+ * client component so it can manage the verification dialog open/close state.
+ *
+ * Shows:
+ *  - Active chit → quiet "available after completion" hint
+ *  - DATA_COMPLETENESS_UNVERIFIED → "Review & Verify Cash Flows" CTA
+ *  - Other UNAVAILABLE reasons → list of reasons (no verify CTA)
+ *  - AVAILABLE → full ROI breakdown with "Verified" badge
+ */
+
+import { useState } from 'react'
 import { Card } from '@/components/ui/card'
-import { CheckCircle2, XCircle, TrendingUp, AlertCircle } from 'lucide-react'
-import type { RoiOutcome, RoiUnavailableReason } from '@/lib/financial/roi'
+import { CheckCircle2, TrendingUp, AlertCircle, ShieldCheck } from 'lucide-react'
+import type { RoiOutcome, RoiUnavailableReason, EffectiveLedgerEntry } from '@/lib/financial/roi'
+import { VerificationDialog } from './verification-dialog'
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
 function formatReason(reason: RoiUnavailableReason): string {
   switch (reason) {
@@ -14,18 +35,31 @@ function formatReason(reason: RoiUnavailableReason): string {
       return 'No actual cash-flow entries found.'
     case 'ZERO_TOTAL_PAID':
       return 'Total actual paid is zero; cannot compute ROI.'
+    case 'DATA_COMPLETENESS_UNVERIFIED':
+      return 'Actual cash-flow completeness cannot be verified.'
     default:
       return reason
   }
 }
 
-export function RoiSummaryCard({ outcome }: { outcome: RoiOutcome }) {
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
+
+interface RoiSummaryCardProps {
+  outcome: RoiOutcome
+  chitId: string
+  effectiveEntries: EffectiveLedgerEntry[]
+}
+
+export function RoiSummaryCard({ outcome, chitId, effectiveEntries }: RoiSummaryCardProps) {
+  const [dialogOpen, setDialogOpen] = useState(false)
+
+  // ── Active chit: quiet hint ──────────────────────────────────────────────
   if (outcome.status === 'UNAVAILABLE') {
-    // If it's just active, we might show a quieter message.
-    // But the spec says: For an ineligible COMPLETED chit, show ROI unavailable + reason.
-    // For ACTIVE: "Show an explicit 'ROI available after completion' state."
-    const isActiveOnly = outcome.reasons.length === 1 && outcome.reasons[0] === 'CHIT_NOT_COMPLETED'
-    
+    const reasons = outcome.reasons
+    const isActiveOnly = reasons.length === 1 && reasons[0] === 'CHIT_NOT_COMPLETED'
+
     if (isActiveOnly) {
       return (
         <Card className="p-5 border border-dashed border-[rgba(255,255,255,0.06)] bg-transparent">
@@ -42,26 +76,53 @@ export function RoiSummaryCard({ outcome }: { outcome: RoiOutcome }) {
       )
     }
 
+    // ── DATA_COMPLETENESS_UNVERIFIED: show CTA if it's the only blocking reason ──
+    const nonVerifyReasons = reasons.filter((r) => r !== 'DATA_COMPLETENESS_UNVERIFIED')
+    const isOnlyBlockerVerification = reasons.includes('DATA_COMPLETENESS_UNVERIFIED') && nonVerifyReasons.length === 0
+
     return (
-      <Card className="p-5 border border-dashed border-amber-900/30 bg-amber-900/10">
-        <div className="flex items-start gap-3">
-          <div className="rounded-full bg-amber-900/30 p-2 mt-0.5">
-            <AlertCircle className="h-4 w-4 text-amber-500" />
+      <>
+        <Card className="p-5 border border-dashed border-amber-900/30 bg-amber-900/10">
+          <div className="flex items-start gap-3">
+            <div className="rounded-full bg-amber-900/30 p-2 mt-0.5">
+              <AlertCircle className="h-4 w-4 text-amber-500" />
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-medium text-amber-200 mb-1.5">ROI Unavailable</p>
+              <ul className="list-disc list-inside text-xs text-amber-400/80 space-y-1 mb-3">
+                {reasons.map((reason) => (
+                  <li key={reason}>{formatReason(reason)}</li>
+                ))}
+              </ul>
+
+              {/* Only show the CTA when verification is the sole blocker */}
+              {isOnlyBlockerVerification && (
+                <button
+                  id="open-verify-dialog-button"
+                  type="button"
+                  onClick={() => setDialogOpen(true)}
+                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#1e1b4b] hover:bg-[#312e81] text-[#a5b4fc] hover:text-white border border-[#312e81]/60 hover:border-[#4f46e5] transition-all"
+                >
+                  <ShieldCheck className="h-3.5 w-3.5" />
+                  Review &amp; Verify Cash Flows
+                </button>
+              )}
+            </div>
           </div>
-          <div>
-            <p className="text-sm font-medium text-amber-200 mb-1.5">ROI Unavailable</p>
-            <ul className="list-disc list-inside text-xs text-amber-400/80 space-y-1">
-              {outcome.reasons.map((reason) => (
-                <li key={reason}>{formatReason(reason)}</li>
-              ))}
-            </ul>
-          </div>
-        </div>
-      </Card>
+        </Card>
+
+        {dialogOpen && (
+          <VerificationDialog
+            chitId={chitId}
+            effectiveEntries={effectiveEntries}
+            onClose={() => setDialogOpen(false)}
+          />
+        )}
+      </>
     )
   }
 
-  // Available
+  // ── ROI Available ────────────────────────────────────────────────────────
   return (
     <Card className="overflow-hidden">
       <div className="bg-[#1e1b4b]/30 p-4 border-b border-[#312e81]/30 flex items-center justify-between">
@@ -74,7 +135,7 @@ export function RoiSummaryCard({ outcome }: { outcome: RoiOutcome }) {
           Verified
         </div>
       </div>
-      
+
       <div className="p-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 bg-[#0f172a]">
         <div>
           <p className="text-xs font-mono uppercase tracking-widest text-[#64748B] mb-1">Total Actual Paid</p>

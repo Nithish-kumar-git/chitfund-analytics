@@ -3,6 +3,10 @@
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
+// Phase 7F: Verification invalidation on ledger_entry INSERT is handled
+// atomically by the DB trigger trg_ledger_entries_invalidate_verification
+// (migration 20261003000002_verification_invalidation_triggers.sql).
+// No application-layer clearCashFlowVerification call is needed here.
 
 const correctionSchema = z.object({
   chit_id: z.string().uuid(),
@@ -76,6 +80,11 @@ export async function correctLedgerEntry(data: z.infer<typeof correctionSchema>)
   if (insertError) {
     return { success: false, error: `Failed to save correction: ${insertError.message}` }
   }
+
+  // Phase 7F: Invalidation is handled atomically by the DB trigger
+  // trg_ledger_entries_invalidate_verification which fires BEFORE INSERT on
+  // ledger_entries. verified_at and verified_by were cleared within the same
+  // Postgres transaction that committed the correction above.
 
   revalidatePath(`/chits/${chit_id}`)
   return { success: true }

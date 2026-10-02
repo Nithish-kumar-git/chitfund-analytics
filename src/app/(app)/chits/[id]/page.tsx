@@ -10,7 +10,7 @@ import { RoiSummaryCard } from '@/components/analytics/roi-summary'
 import { LedgerTable } from '@/components/ledger/ledger-table'
 import type { LedgerRow } from '@/components/ledger/ledger-table'
 import { computeCompletedRoi } from '@/lib/financial/roi'
-import type { RoiInput, EffectiveLedgerEntry, RoiOutcome, RoiUnavailableReason } from '@/lib/financial/roi'
+import type { RoiInput, EffectiveLedgerEntry } from '@/lib/financial/roi'
 
 function DetailRow({ label, value }: { label: string; value: string | null | undefined }) {
   return (
@@ -173,7 +173,9 @@ export default async function ChitDetailPage({ params }: PageProps) {
     recordedRoundCount: typedAuctionEvents.length,
     effectiveEntries,
     hasFlaggedMismatch,
-    isCashFlowVerified: false, // Schema does not currently support explicit verification
+    // Phase 7F: Both fields must be populated (not null) for the chit to be verified.
+    // verified_by being present ensures the verifier identity is known.
+    isCashFlowVerified: typedChit.verified_at !== null && typedChit.verified_by !== null,
   }
 
   const roiOutcome = computeCompletedRoi(roiInput)
@@ -314,7 +316,11 @@ export default async function ChitDetailPage({ params }: PageProps) {
         </div>
         <div className="flex flex-col gap-4">
           <ChitSummaryCards summary={chitSummary} />
-          <RoiSummaryCard outcome={roiOutcome} />
+          <RoiSummaryCard
+            outcome={roiOutcome}
+            chitId={id}
+            effectiveEntries={effectiveEntries}
+          />
         </div>
       </div>
 

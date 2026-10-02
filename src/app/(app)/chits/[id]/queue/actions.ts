@@ -6,6 +6,9 @@ import { persistConfirmedIngestion } from '@/lib/ingestion/persistence'
 import type { IngestionResult, ConfirmedIngestion } from '@/lib/ingestion/types'
 import { contentHash, normaliseMessage } from '@/lib/whatsapp'
 import { revalidatePath } from 'next/cache'
+// Phase 7F: Verification invalidation on auction_event and ledger_entry INSERT
+// is handled atomically by DB triggers (migration 20261003000002_*).
+// No application-layer clearCashFlowVerification call is needed here.
 
 export async function addToQueue(chitId: string, rawText: string) {
   try {
@@ -241,6 +244,9 @@ export async function confirmFromQueue(
     if (!persistResult.success) {
       return { success: false, error: persistResult.error }
     }
+
+    // Phase 7F: Invalidation is handled atomically by DB triggers on
+    // auction_events and ledger_entries. No application-layer call needed.
 
     revalidatePath(`/chits/${chitId}`)
     revalidatePath(`/chits/${chitId}/queue`)

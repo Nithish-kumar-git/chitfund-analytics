@@ -1,6 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { correctLedgerEntry } from './ledger-actions'
 
+// Phase 7F (atomicity): clearCashFlowVerification has been removed from
+// ledger-actions.ts. Invalidation is now handled by the DB trigger
+// trg_ledger_entries_invalidate_verification. No mock is needed here.
+
 // Mock dependencies
 vi.mock('@/lib/supabase/server', () => ({
   createClient: vi.fn()
