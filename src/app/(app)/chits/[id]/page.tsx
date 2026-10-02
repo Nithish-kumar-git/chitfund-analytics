@@ -6,8 +6,11 @@ import Link from 'next/link'
 import { ArrowLeft, Calendar, Users, Layers, Percent, FileText, Pencil, Activity, BookOpen } from 'lucide-react'
 import { computeChitSummary } from '@/lib/analytics/summary'
 import { ChitSummaryCards } from '@/components/analytics/summary-cards'
+import { RoiSummaryCard } from '@/components/analytics/roi-summary'
 import { LedgerTable } from '@/components/ledger/ledger-table'
 import type { LedgerRow } from '@/components/ledger/ledger-table'
+import { computeCompletedRoi } from '@/lib/financial/roi'
+import type { RoiInput, EffectiveLedgerEntry, RoiOutcome, RoiUnavailableReason } from '@/lib/financial/roi'
 
 function DetailRow({ label, value }: { label: string; value: string | null | undefined }) {
   return (
@@ -151,6 +154,30 @@ export default async function ChitDetailPage({ params }: PageProps) {
     }
   })
 
+  const effectiveEntries: EffectiveLedgerEntry[] = ledgerEntries
+    .filter((e) => !e.is_superseded)
+    .map((e) => ({
+      id: e.id,
+      entry_type: e.entry_type,
+      effective_entry_type: e.effective_entry_type,
+      amount: e.amount,
+      transaction_date: e.transaction_date,
+    }))
+
+  const hasFlaggedMismatch = typedAuctionEvents.some(
+    (event) => event.calculation_status === 'FLAGGED_MISMATCH'
+  )
+
+  const roiInput: RoiInput = {
+    chit: { status: typedChit.status, duration_months: typedChit.duration_months },
+    recordedRoundCount: typedAuctionEvents.length,
+    effectiveEntries,
+    hasFlaggedMismatch,
+    isCashFlowVerified: false, // Schema does not currently support explicit verification
+  }
+
+  const roiOutcome = computeCompletedRoi(roiInput)
+
   return (
     <div>
       {/* Back link */}
@@ -285,7 +312,10 @@ export default async function ChitDetailPage({ params }: PageProps) {
             Progress & Summary
           </span>
         </div>
-        <ChitSummaryCards summary={chitSummary} />
+        <div className="flex flex-col gap-4">
+          <ChitSummaryCards summary={chitSummary} />
+          <RoiSummaryCard outcome={roiOutcome} />
+        </div>
       </div>
 
       {/* Auction History */}
