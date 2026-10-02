@@ -1,5 +1,6 @@
 import { Card } from '@/components/ui/card'
 import type { LedgerEntry, LedgerEntryType } from '@/types/database'
+import { CorrectEntryDialog } from './correct-entry-dialog'
 
 // -------------------------------------------------------------------------
 // Types
@@ -14,6 +15,16 @@ export interface LedgerRow {
   created_at: string
   // Optional join — present when auction_event_id resolves
   round_number?: number | null
+  corrects_entry_id: string | null
+  is_superseded: boolean
+  effective_entry_type: LedgerEntryType
+}
+
+export interface LedgerMetrics {
+  transactionCount: number
+  installmentCount: number
+  totalInstallmentAmount: number
+  totalIncomingAmount: number
 }
 
 // -------------------------------------------------------------------------
@@ -73,9 +84,11 @@ function EntryTypeBadge({ type }: { type: string }) {
 
 interface LedgerTableProps {
   entries: LedgerRow[]
+  metrics: LedgerMetrics
+  chitId: string
 }
 
-export function LedgerTable({ entries }: LedgerTableProps) {
+export function LedgerTable({ entries, metrics, chitId }: LedgerTableProps) {
   if (entries.length === 0) {
     return (
       <div
@@ -88,9 +101,30 @@ export function LedgerTable({ entries }: LedgerTableProps) {
   }
 
   return (
-    <div className="flex flex-col gap-3" data-testid="ledger-table">
-      {entries.map((entry) => (
-        <Card key={entry.id} className="p-4">
+    <div className="flex flex-col gap-6" data-testid="ledger-table">
+      {/* Safe Metrics */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <Card className="p-4 bg-[#1e293b]/50">
+          <dt className="text-xs text-[#64748B] font-mono uppercase tracking-wide mb-1">Effective Transactions</dt>
+          <dd className="text-xl font-semibold text-[#E2E8F0]">{metrics.transactionCount}</dd>
+        </Card>
+        <Card className="p-4 bg-[#1e293b]/50">
+          <dt className="text-xs text-[#64748B] font-mono uppercase tracking-wide mb-1">Installments Recorded</dt>
+          <dd className="text-xl font-semibold text-[#E2E8F0]">{metrics.installmentCount}</dd>
+        </Card>
+        <Card className="p-4 bg-[#1e293b]/50">
+          <dt className="text-xs text-[#64748B] font-mono uppercase tracking-wide mb-1">Total Installments Out</dt>
+          <dd className="text-xl font-semibold text-[#E2E8F0]">{formatAmount(metrics.totalInstallmentAmount)}</dd>
+        </Card>
+        <Card className="p-4 bg-[#1e293b]/50">
+          <dt className="text-xs text-[#64748B] font-mono uppercase tracking-wide mb-1">Total Incoming</dt>
+          <dd className="text-xl font-semibold text-[#4ade80]">{formatAmount(metrics.totalIncomingAmount)}</dd>
+        </Card>
+      </div>
+
+      <div className="flex flex-col gap-3">
+        {entries.map((entry) => (
+          <Card key={entry.id} className={`p-4 ${entry.is_superseded ? 'opacity-50 grayscale' : ''}`}>
           {/* Header row: date + badge */}
           <div className="flex flex-wrap items-center justify-between gap-3 mb-3 pb-3 border-b border-[rgba(255,255,255,0.05)]">
             <div className="flex items-center gap-3">
@@ -110,12 +144,28 @@ export function LedgerTable({ entries }: LedgerTableProps) {
                 </span>
               )}
             </div>
-            <span
-              data-testid={`ledger-date-${entry.id}`}
-              className="text-xs text-[#64748B] font-mono"
-            >
-              {formatDate(entry.transaction_date)}
-            </span>
+            <div className="flex items-center gap-3">
+              <span
+                data-testid={`ledger-date-${entry.id}`}
+                className="text-xs text-[#64748B] font-mono"
+              >
+                {formatDate(entry.transaction_date)}
+              </span>
+              {entry.is_superseded ? (
+                <span className="text-xs font-semibold text-rose-500 bg-rose-500/10 px-2 py-0.5 rounded border border-rose-500/20">
+                  SUPERSEDED
+                </span>
+              ) : (
+                entry.entry_type !== 'MANUAL_CORRECTION' && (
+                  <CorrectEntryDialog
+                    chitId={chitId}
+                    entryId={entry.id}
+                    currentAmount={entry.amount}
+                    entryType={entryTypeLabel(entry.entry_type)}
+                  />
+                )
+              )}
+            </div>
           </div>
 
           {/* Amount + Notes row */}
@@ -147,7 +197,8 @@ export function LedgerTable({ entries }: LedgerTableProps) {
             )}
           </div>
         </Card>
-      ))}
+        ))}
+      </div>
     </div>
   )
 }

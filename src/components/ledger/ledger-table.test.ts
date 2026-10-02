@@ -42,6 +42,9 @@ function makeEntry(overrides: Partial<LedgerRow> = {}): LedgerRow {
     notes: null,
     created_at: `2026-06-01T10:00:00Z`,
     round_number: null,
+    corrects_entry_id: null,
+    is_superseded: false,
+    effective_entry_type: 'INSTALLMENT_PAID',
     ...overrides,
   }
 }

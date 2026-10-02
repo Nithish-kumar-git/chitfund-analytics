@@ -280,4 +280,48 @@ describe('Chit Detail Page — Phase 5A (Read-Only History)', () => {
     expect(s).not.toContain('ROI')
     expect(s).not.toContain('Net Total')
   })
+
+  it('calculates safe metrics correctly and excludes superseded entries', async () => {
+    mockState.ledgerData = [
+      {
+        id: 'entry-1',
+        entry_type: 'INSTALLMENT_PAID',
+        amount: 100,
+        corrects_entry_id: null
+      },
+      {
+        id: 'entry-2',
+        entry_type: 'INSTALLMENT_PAID',
+        amount: 200,
+        corrects_entry_id: null
+      },
+      {
+        id: 'entry-3', // Correction of entry-2
+        entry_type: 'MANUAL_CORRECTION',
+        amount: 250,
+        corrects_entry_id: 'entry-2'
+      },
+      {
+        id: 'entry-4',
+        entry_type: 'AUCTION_PAYOUT_RECEIVED',
+        amount: 500,
+        corrects_entry_id: null
+      },
+      {
+        id: 'entry-5', // Ignored type for aggregate amount
+        entry_type: 'LATE_FEE',
+        amount: 50,
+        corrects_entry_id: null
+      }
+    ]
+    const result: any = await ChitDetailPage({ params: Promise.resolve({ id: CHIT_ID }) })
+    const s = JSON.stringify(result, getCircularReplacer())
+    // 5 total rows, 1 is superseded (entry-2), leaving 4 effective transactions.
+    expect(s).toContain('"transactionCount":4')
+    // Installments: entry-1 (100) + entry-3 (which effectively is INSTALLMENT_PAID, 250) = 350. Count = 2.
+    expect(s).toContain('"installmentCount":2')
+    expect(s).toContain('"totalInstallmentAmount":350')
+    // Incoming: entry-4 (500)
+    expect(s).toContain('"totalIncomingAmount":500')
+  })
 })

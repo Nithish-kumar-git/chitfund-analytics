@@ -96,20 +96,60 @@ export default async function ChitDetailPage({ params }: PageProps) {
   // Outer-joined with auction_events to retrieve round_number safely.
   const { data: ledgerRaw } = await (supabase as any)
     .from('ledger_entries')
-    .select('id, transaction_date, entry_type, amount, notes, created_at, auction_event_id, auction_events(round_number)')
+    .select('id, transaction_date, entry_type, amount, notes, created_at, corrects_entry_id, auction_event_id, auction_events(round_number)')
     .eq('chit_id', id)
     .order('transaction_date', { ascending: false })
     .order('created_at', { ascending: false })
 
-  const ledgerEntries: LedgerRow[] = (ledgerRaw || []).map((row: any) => ({
-    id: row.id,
-    transaction_date: row.transaction_date,
-    entry_type: row.entry_type,
-    amount: Number(row.amount),
-    notes: row.notes ?? null,
-    created_at: row.created_at,
-    round_number: row.auction_events?.round_number ?? null,
-  }))
+  const correctedIds = new Set<string>()
+  ;(ledgerRaw || []).forEach((row: any) => {
+    if (row.entry_type === 'MANUAL_CORRECTION' && row.corrects_entry_id) {
+      correctedIds.add(row.corrects_entry_id)
+    }
+  })
+
+  const ledgerMetrics = {
+    transactionCount: 0,
+    installmentCount: 0,
+    totalInstallmentAmount: 0,
+    totalIncomingAmount: 0
+  }
+
+  const ledgerEntries: LedgerRow[] = (ledgerRaw || []).map((row: any) => {
+    const isSuperseded = correctedIds.has(row.id)
+
+    // Find effective type if this is a correction
+    let effectiveType = row.entry_type
+    if (row.entry_type === 'MANUAL_CORRECTION' && row.corrects_entry_id) {
+      const original = (ledgerRaw || []).find((r: any) => r.id === row.corrects_entry_id)
+      if (original) {
+        effectiveType = original.entry_type
+      }
+    }
+
+    if (!isSuperseded) {
+      ledgerMetrics.transactionCount++
+      if (effectiveType === 'INSTALLMENT_PAID') {
+        ledgerMetrics.installmentCount++
+        ledgerMetrics.totalInstallmentAmount += Math.abs(Number(row.amount))
+      } else if (effectiveType === 'AUCTION_PAYOUT_RECEIVED') {
+        ledgerMetrics.totalIncomingAmount += Math.abs(Number(row.amount))
+      }
+    }
+
+    return {
+      id: row.id,
+      transaction_date: row.transaction_date,
+      entry_type: row.entry_type,
+      amount: Number(row.amount),
+      notes: row.notes ?? null,
+      created_at: row.created_at,
+      round_number: row.auction_events?.round_number ?? null,
+      corrects_entry_id: row.corrects_entry_id ?? null,
+      is_superseded: isSuperseded,
+      effective_entry_type: effectiveType,
+    }
+  })
 
   return (
     <div>
@@ -323,7 +363,7 @@ export default async function ChitDetailPage({ params }: PageProps) {
             Financial Ledger
           </span>
         </div>
-        <LedgerTable entries={ledgerEntries} />
+        <LedgerTable entries={ledgerEntries} metrics={ledgerMetrics} chitId={id} />
       </div>
     </div>
   )
