@@ -2,43 +2,75 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import ChitDetailPage from './page'
 
 // ---------------------------------------------------------------------------
-// Mock dependencies
+// vi.hoisted lets us declare state that is available BEFORE vi.mock hoisting
 // ---------------------------------------------------------------------------
-const mockGetUser = vi.fn()
-const mockSelect = vi.fn()
-const mockEq = vi.fn()
-const mockSingle = vi.fn()
-const mockOrder = vi.fn()
+const mockState = vi.hoisted(() => ({
+  auctionData: [] as any[],
+  ledgerData:  [] as any[],
+  getUser: vi.fn(),
+  single:  vi.fn(),
+  // Captured on each auction_events query — used by the ordering verification test
+  capturedAuctionEqArgs:    [] as any[],
+  capturedAuctionOrderArgs: [] as any[],
+}))
 
 vi.mock('@/lib/supabase/server', () => ({
   createClient: vi.fn(() => ({
-    auth: {
-      getUser: mockGetUser
-    },
-    from: vi.fn((table: string) => {
-      // Return a chainable mock based on the table
-      const chain = {
-        select: mockSelect,
-        eq: mockEq,
-        single: mockSingle,
-        order: mockOrder
+    auth: { getUser: mockState.getUser },
+    from: (table: string) => {
+      if (table === 'ledger_entries') {
+        // Chain: .select().eq().order().order() → resolves
+        return {
+          select: () => ({
+            eq: () => ({
+              order: () => ({
+                order: () => Promise.resolve({ data: mockState.ledgerData, error: null })
+              })
+            })
+          })
+        }
       }
-      return chain
-    })
+      if (table === 'auction_events') {
+        // Chain: .select().eq().order() → resolves
+        // eq/order arguments are captured into mockState for verification by tests.
+        return {
+          select: () => ({
+            eq: (col: string, val: any) => {
+              mockState.capturedAuctionEqArgs = [col, val]
+              return {
+                order: (col2: string, opts: any) => {
+                  mockState.capturedAuctionOrderArgs = [col2, opts]
+                  return Promise.resolve({ data: mockState.auctionData, error: null })
+                }
+              }
+            }
+          })
+        }
+      }
+      // chits / chit_companies
+      // Chain: .select().eq().single() → resolves
+      return {
+        select: () => ({
+          eq: () => ({
+            single: mockState.single,
+            order:  () => Promise.resolve({ data: [], error: null }),
+          })
+        })
+      }
+    }
   }))
 }))
 
-// Mock next/navigation
 vi.mock('next/navigation', () => ({
   notFound: vi.fn(() => { throw new Error('NEXT_NOT_FOUND') }),
   redirect: vi.fn(() => { throw new Error('NEXT_REDIRECT') }),
 }))
 
 // ---------------------------------------------------------------------------
-// Helpers
+// Fixtures
 // ---------------------------------------------------------------------------
 const USER_ID = 'user-uuid-0001'
-const CHIT_ID = 'chit-uuid-0001'
+const CHIT_ID  = 'chit-uuid-0001'
 
 const MOCK_CHIT = {
   id: CHIT_ID,
@@ -70,171 +102,182 @@ const getCircularReplacer = () => {
 // ---------------------------------------------------------------------------
 describe('Chit Detail Page — Phase 5A (Read-Only History)', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
-    
-    // Default mocks setup to chain properly
-    mockSelect.mockReturnValue({ eq: mockEq })
-    mockEq.mockReturnValue({ single: mockSingle, order: mockOrder })
-    mockOrder.mockResolvedValue({ data: [], error: null }) // For auction_events
-    mockSingle.mockResolvedValue({ data: MOCK_CHIT, error: null }) // For chits
-    mockGetUser.mockResolvedValue({ data: { user: { id: USER_ID } } })
+    // Reset only the spy call histories, NOT mock implementations.
+    // vi.clearAllMocks() would wipe createClient's implementation — don't use it here.
+    mockState.getUser.mockReset()
+    mockState.single.mockReset()
+    mockState.auctionData = []
+    mockState.ledgerData  = []
+    mockState.single.mockResolvedValue({ data: MOCK_CHIT, error: null })
+    mockState.getUser.mockResolvedValue({ data: { user: { id: USER_ID } } })
   })
 
+  // -- auth/access --
+
   it('redirects to / if user is not authenticated', async () => {
-    mockGetUser.mockResolvedValueOnce({ data: { user: null } })
-    
+    mockState.getUser.mockResolvedValueOnce({ data: { user: null } })
     await expect(ChitDetailPage({ params: Promise.resolve({ id: CHIT_ID }) }))
       .rejects.toThrow('NEXT_REDIRECT')
   })
 
   it('calls notFound if the chit does not exist or user lacks access (RLS)', async () => {
-    // Simulate RLS returning no rows
-    mockSingle.mockResolvedValueOnce({ data: null, error: { message: 'Not found' } })
-    
+    mockState.single.mockResolvedValueOnce({ data: null, error: { message: 'Not found' } })
     await expect(ChitDetailPage({ params: Promise.resolve({ id: CHIT_ID }) }))
       .rejects.toThrow('NEXT_NOT_FOUND')
   })
 
+  // Restored from pre-Phase-6D HEAD: verifies the exact auction_events query contract
   it('queries auction_events for the current chit and orders by round_number descending', async () => {
-    // We will intercept the calls to verify the chain
-    let auctionEventsEqArgs: any[] = []
-    let auctionEventsOrderArgs: any[] = []
-    
-    // We override mockEq to capture arguments
-    mockEq.mockImplementation(function (this: any, col: string, val: any) {
-      if (col === 'chit_id' && val === CHIT_ID) {
-        auctionEventsEqArgs = [col, val]
-      }
-      return { single: mockSingle, order: mockOrder }
-    })
-    
-    mockOrder.mockImplementation(function (this: any, col: string, opts: any) {
-      auctionEventsOrderArgs = [col, opts]
-      return Promise.resolve({ data: [], error: null })
-    })
+    mockState.capturedAuctionEqArgs    = []
+    mockState.capturedAuctionOrderArgs = []
 
     try {
       await ChitDetailPage({ params: Promise.resolve({ id: CHIT_ID }) })
-    } catch (e) {
-      // Ignore React Server Component serialization issues in test if any
-    }
+    } catch (_) { /* ignore RSC serialization errors */ }
 
-    expect(auctionEventsEqArgs).toEqual(['chit_id', CHIT_ID])
-    expect(auctionEventsOrderArgs).toEqual(['round_number', { ascending: false }])
+    expect(mockState.capturedAuctionEqArgs).toEqual(['chit_id', CHIT_ID])
+    expect(mockState.capturedAuctionOrderArgs).toEqual(['round_number', { ascending: false }])
   })
 
-  it('renders correctly with an empty history', async () => {
-    // Mock auction events returning empty
-    mockOrder.mockResolvedValueOnce({ data: [], error: null })
-    
+  // -- rendering: auction events --
+
+  it('renders correctly with an empty auction history', async () => {
     const result: any = await ChitDetailPage({ params: Promise.resolve({ id: CHIT_ID }) })
-    
-    // Check the structure to ensure "No rounds recorded yet." is somewhere in the tree
-    const stringified = JSON.stringify(result, getCircularReplacer())
-    expect(stringified).toContain('No rounds recorded yet.')
+    const s = JSON.stringify(result, getCircularReplacer())
+    expect(s).toContain('No rounds recorded yet.')
   })
 
   it('renders an Edit Chit link navigating to /chits/[id]/edit in the header', async () => {
-    mockOrder.mockResolvedValueOnce({ data: [], error: null })
-
     const result: any = await ChitDetailPage({ params: Promise.resolve({ id: CHIT_ID }) })
-    const stringified = JSON.stringify(result, getCircularReplacer())
-
-    expect(stringified).toContain('Edit Chit')
-    expect(stringified).toContain(`/chits/${CHIT_ID}/edit`)
+    const s = JSON.stringify(result, getCircularReplacer())
+    expect(s).toContain('Edit Chit')
+    expect(s).toContain(`/chits/${CHIT_ID}/edit`)
   })
 
   it('renders correctly with a NORMAL auction event showing financial data', async () => {
-    const mockNormalRound = {
-      id: 'round-1',
-      chit_id: CHIT_ID,
-      round_number: 1,
-      event_type: 'NORMAL',
-      thallu: 15000,
-      commission: 5000,
-      member_thallu: 500,
-      non_winner_payment: 4500,
+    mockState.auctionData = [{
+      id: 'round-1', chit_id: CHIT_ID, round_number: 1, event_type: 'NORMAL',
+      thallu: 15000, commission: 5000, member_thallu: 500, non_winner_payment: 4500,
       calculation_status: 'VERIFIED_FORMULA'
-    }
-    
-    mockOrder.mockResolvedValueOnce({ data: [mockNormalRound], error: null })
-    
+    }]
     const result: any = await ChitDetailPage({ params: Promise.resolve({ id: CHIT_ID }) })
-    const stringified = JSON.stringify(result, getCircularReplacer())
-    
-    // Should NOT contain the empty state
-    expect(stringified).not.toContain('No rounds recorded yet.')
-    
-    // Should contain the round number
-    expect(stringified).toContain('"Round ",1')
-    
-    // Should contain formatted financial values
-    expect(stringified).toContain('15,000') // thallu
-    expect(stringified).toContain('5,000')  // commission
-    expect(stringified).toContain('4,500')  // non_winner_payment
+    const s = JSON.stringify(result, getCircularReplacer())
+
+    expect(s).not.toContain('No rounds recorded yet.')
+    expect(s).toContain('"Round ",1')
+    expect(s).toContain('15,000')
+    expect(s).toContain('5,000')
+    expect(s).toContain('4,500')
   })
 
   it('renders correctly with a SPECIAL_NO_AUCTION event without normal calculations', async () => {
-    const mockSpecialRound = {
-      id: 'round-2',
-      chit_id: CHIT_ID,
-      round_number: 2,
-      event_type: 'SPECIAL_NO_AUCTION',
-      thallu: null,
-      commission: null,
-      member_thallu: null,
-      non_winner_payment: null,
+    mockState.auctionData = [{
+      id: 'round-2', chit_id: CHIT_ID, round_number: 2, event_type: 'SPECIAL_NO_AUCTION',
+      thallu: null, commission: null, member_thallu: null, non_winner_payment: null,
       calculation_status: 'INDUSTRY_DEFAULT'
-    }
-    
-    mockOrder.mockResolvedValueOnce({ data: [mockSpecialRound], error: null })
-    
+    }]
     const result: any = await ChitDetailPage({ params: Promise.resolve({ id: CHIT_ID }) })
-    const stringified = JSON.stringify(result, getCircularReplacer())
-    
-    expect(stringified).toContain('"Round ",2')
-    expect(stringified).toContain('Normal auction calculations are not applicable for ","SPECIAL_NO_AUCTION",')
+    const s = JSON.stringify(result, getCircularReplacer())
+
+    expect(s).toContain('"Round ",2')
+    expect(s).toContain('Normal auction calculations are not applicable for ","SPECIAL_NO_AUCTION",')
   })
 
   it('renders multiple rounds correctly in descending order, including mixed event types', async () => {
-    const round3 = {
-      id: 'round-3', chit_id: CHIT_ID, round_number: 3, event_type: 'NORMAL',
-      thallu: 10000, commission: 5000, member_thallu: 250, non_winner_payment: 4750, calculation_status: 'VERIFIED_FORMULA'
-    }
-    const round2 = {
-      id: 'round-2', chit_id: CHIT_ID, round_number: 2, event_type: 'SPECIAL_NO_AUCTION',
-      thallu: null, commission: null, member_thallu: null, non_winner_payment: null, calculation_status: 'INDUSTRY_DEFAULT'
-    }
-    const round1 = {
-      id: 'round-1', chit_id: CHIT_ID, round_number: 1, event_type: 'UNKNOWN',
-      thallu: null, commission: null, member_thallu: null, non_winner_payment: null, calculation_status: 'INDUSTRY_DEFAULT'
-    }
-
-    // They are returned in descending order by the mock, which matches the page query order
-    mockOrder.mockResolvedValueOnce({ data: [round3, round2, round1], error: null })
-
+    mockState.auctionData = [
+      { id: 'round-3', chit_id: CHIT_ID, round_number: 3, event_type: 'NORMAL',
+        thallu: 10000, commission: 5000, member_thallu: 250, non_winner_payment: 4750, calculation_status: 'VERIFIED_FORMULA' },
+      { id: 'round-2', chit_id: CHIT_ID, round_number: 2, event_type: 'SPECIAL_NO_AUCTION',
+        thallu: null, commission: null, member_thallu: null, non_winner_payment: null, calculation_status: 'INDUSTRY_DEFAULT' },
+      { id: 'round-1', chit_id: CHIT_ID, round_number: 1, event_type: 'UNKNOWN',
+        thallu: null, commission: null, member_thallu: null, non_winner_payment: null, calculation_status: 'INDUSTRY_DEFAULT' }
+    ]
     const result: any = await ChitDetailPage({ params: Promise.resolve({ id: CHIT_ID }) })
-    const stringified = JSON.stringify(result, getCircularReplacer())
+    const s = JSON.stringify(result, getCircularReplacer())
 
-    // Check that all rounds are present
-    expect(stringified).toContain('"Round ",3')
-    expect(stringified).toContain('"Round ",2')
-    expect(stringified).toContain('"Round ",1')
+    expect(s).toContain('"Round ",3')
+    expect(s).toContain('"Round ",2')
+    expect(s).toContain('"Round ",1')
+    expect(s).toContain('10,000')
+    expect(s).toContain('4,750')
+    expect(s).toContain('Normal auction calculations are not applicable for ","SPECIAL_NO_AUCTION",')
+    expect(s).toContain('Normal auction calculations are not applicable for ","UNKNOWN",')
 
-    // Check specific financial values for Round 3
-    expect(stringified).toContain('10,000')
-    expect(stringified).toContain('4,750')
-
-    // Check disclaimers for Special/Unknown
-    expect(stringified).toContain('Normal auction calculations are not applicable for ","SPECIAL_NO_AUCTION",')
-    expect(stringified).toContain('Normal auction calculations are not applicable for ","UNKNOWN",')
-
-    // Verify ordering by checking indexOf in stringified tree
-    const idx3 = stringified.indexOf('"Round ",3')
-    const idx2 = stringified.indexOf('"Round ",2')
-    const idx1 = stringified.indexOf('"Round ",1')
-
+    const idx3 = s.indexOf('"Round ",3')
+    const idx2 = s.indexOf('"Round ",2')
+    const idx1 = s.indexOf('"Round ",1')
     expect(idx3).toBeLessThan(idx2)
     expect(idx2).toBeLessThan(idx1)
+  })
+
+  // -- Phase 6D: Ledger section --
+
+  it('renders the Financial Ledger section heading', async () => {
+    const result: any = await ChitDetailPage({ params: Promise.resolve({ id: CHIT_ID }) })
+    const s = JSON.stringify(result, getCircularReplacer())
+    expect(s).toContain('Financial Ledger')
+  })
+
+  it('renders the ledger empty state when no ledger entries exist', async () => {
+    mockState.ledgerData = []
+    const result: any = await ChitDetailPage({ params: Promise.resolve({ id: CHIT_ID }) })
+    const s = JSON.stringify(result, getCircularReplacer())
+    // LedgerTable receives an empty entries prop — component handles the empty state
+    expect(s).toContain('Financial Ledger')
+    expect(s).toContain('"entries":[]')
+  })
+
+  it('renders ledger entries when they exist — correct amount and round number shown', async () => {
+    mockState.ledgerData = [{
+      id: 'ledger-1',
+      transaction_date: '2026-05-01',
+      entry_type: 'INSTALLMENT_PAID',
+      amount: 10060,
+      notes: null,
+      created_at: '2026-05-01T09:00:00Z',
+      auction_event_id: 'ae-1',
+      auction_events: { round_number: 3 }
+    }]
+    const result: any = await ChitDetailPage({ params: Promise.resolve({ id: CHIT_ID }) })
+    const s = JSON.stringify(result, getCircularReplacer())
+
+    // The LedgerTable React element is present with the correct entries prop
+    expect(s).toContain('Financial Ledger')
+    // The component receives 1 entry, not empty
+    expect(s).not.toContain('No ledger entries recorded yet.')
+    // The entries array prop contains the entry_type
+    expect(s).toContain('INSTALLMENT_PAID')
+    // The entries array prop contains the amount value
+    expect(s).toContain('10060')
+    // The entries array prop contains the round_number
+    expect(s).toContain('"round_number":3')
+  })
+
+  it('renders notes when present on a ledger entry', async () => {
+    mockState.ledgerData = [{
+      id: 'ledger-2',
+      transaction_date: '2026-06-01',
+      entry_type: 'ADJUSTMENT',
+      amount: 500,
+      notes: 'Admin correction for round 4',
+      created_at: '2026-06-01T10:00:00Z',
+      auction_event_id: null,
+      auction_events: null
+    }]
+    const result: any = await ChitDetailPage({ params: Promise.resolve({ id: CHIT_ID }) })
+    const s = JSON.stringify(result, getCircularReplacer())
+    // Notes value is present in the serialized entries prop
+    expect(s).toContain('Admin correction for round 4')
+  })
+
+  it('does not render balance, running total, profit, ROI, or cash flow', async () => {
+    const result: any = await ChitDetailPage({ params: Promise.resolve({ id: CHIT_ID }) })
+    const s = JSON.stringify(result, getCircularReplacer())
+    expect(s).not.toContain('Running Balance')
+    expect(s).not.toContain('Total Balance')
+    expect(s).not.toContain('Cash Flow')
+    expect(s).not.toContain('Profit')
+    expect(s).not.toContain('ROI')
+    expect(s).not.toContain('Net Total')
   })
 })

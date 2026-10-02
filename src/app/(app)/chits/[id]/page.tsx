@@ -3,9 +3,11 @@ import { notFound, redirect } from 'next/navigation'
 import type { Chit, ChitCompany, AuctionEvent } from '@/types/database'
 import { Card } from '@/components/ui/card'
 import Link from 'next/link'
-import { ArrowLeft, Calendar, Users, Layers, Percent, FileText, Pencil, Activity } from 'lucide-react'
+import { ArrowLeft, Calendar, Users, Layers, Percent, FileText, Pencil, Activity, BookOpen } from 'lucide-react'
 import { computeChitSummary } from '@/lib/analytics/summary'
 import { ChitSummaryCards } from '@/components/analytics/summary-cards'
+import { LedgerTable } from '@/components/ledger/ledger-table'
+import type { LedgerRow } from '@/components/ledger/ledger-table'
 
 function DetailRow({ label, value }: { label: string; value: string | null | undefined }) {
   return (
@@ -87,6 +89,27 @@ export default async function ChitDetailPage({ params }: PageProps) {
 
   const typedAuctionEvents = (auctionEvents || []) as AuctionEvent[]
   const chitSummary = computeChitSummary(typedAuctionEvents, typedChit.duration_months)
+
+  // Fetch ledger entries (read-only — Phase 6D)
+  // Explicit chit_id filter ensures cross-chit isolation.
+  // RLS enforces profile_id ownership at the database level.
+  // Outer-joined with auction_events to retrieve round_number safely.
+  const { data: ledgerRaw } = await (supabase as any)
+    .from('ledger_entries')
+    .select('id, transaction_date, entry_type, amount, notes, created_at, auction_event_id, auction_events(round_number)')
+    .eq('chit_id', id)
+    .order('transaction_date', { ascending: false })
+    .order('created_at', { ascending: false })
+
+  const ledgerEntries: LedgerRow[] = (ledgerRaw || []).map((row: any) => ({
+    id: row.id,
+    transaction_date: row.transaction_date,
+    entry_type: row.entry_type,
+    amount: Number(row.amount),
+    notes: row.notes ?? null,
+    created_at: row.created_at,
+    round_number: row.auction_events?.round_number ?? null,
+  }))
 
   return (
     <div>
@@ -290,6 +313,17 @@ export default async function ChitDetailPage({ params }: PageProps) {
             ))}
           </div>
         )}
+      </div>
+
+      {/* Ledger — Phase 6D: read-only display of recorded ledger_entries */}
+      <div className="mt-8 flex flex-col gap-4">
+        <div className="flex items-center gap-2 mb-2">
+          <BookOpen className="h-4 w-4 text-[#3B82F6]" aria-hidden="true" />
+          <span className="text-xs font-mono uppercase tracking-widest text-[#475569]">
+            Financial Ledger
+          </span>
+        </div>
+        <LedgerTable entries={ledgerEntries} />
       </div>
     </div>
   )
