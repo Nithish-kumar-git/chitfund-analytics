@@ -140,7 +140,14 @@ export async function confirmIngestion(
     }
 
     const eventType = validResult.parse_result.event_type || 'UNKNOWN'
+    const parsedFields = validResult.parse_result.fields
 
+    // Detect explicit winner from parser. Only true when message explicitly states it.
+    // Never invent: absent means unknown.
+    // We preserve NULL/unknown if won_by_us is absent.
+    const wonByUs = parsedFields?.won_by_us === true ? true : null
+
+    // Build the confirmed payload
     const confirmed: ConfirmedIngestion = {
       profile_id: user.id,
       chit_id: chitId,
@@ -151,22 +158,48 @@ export async function confirmIngestion(
       auction_event: {
         round_number: roundNumber,
         event_type: eventType as any,
-        thallu: validResult.parse_result.fields?.thallu,
-        commission: validResult.parse_result.fields?.commission,
-        member_thallu: validResult.parse_result.fields?.stated_member_thallu,
-        non_winner_payment: validResult.parse_result.fields?.stated_payment,
-        won_by_us: false,
-        calculation_status: validResult.status === 'NEEDS_REVIEW' 
+        thallu: parsedFields?.thallu,
+        commission: parsedFields?.commission,
+        member_thallu: parsedFields?.stated_member_thallu,
+        non_winner_payment: parsedFields?.stated_payment,
+        // Only set won_by_us: true when the parser explicitly detected it.
+        // If unknown, we explicitly pass null to preserve the unknown state in the DB.
+        won_by_us: wonByUs,
+        // Only record actual payout if the message stated it explicitly.
+        // NEVER invent from face_value - thallu.
+        our_payout_amount: wonByUs ? parsedFields?.our_payout_amount : undefined,
+        calculation_status: validResult.status === 'NEEDS_REVIEW'
             ? (validResult.proposed_calculation_status === 'FLAGGED_MISMATCH' ? 'FLAGGED_MISMATCH' : 'MANUAL_OVERRIDE')
             : (validResult.proposed_calculation_status || 'INDUSTRY_DEFAULT'),
         auction_date: new Date(),
       },
-      ledger_entry: validResult.parse_result.fields?.stated_payment ? {
-        entry_type: 'INSTALLMENT_PAID',
-        amount: validResult.parse_result.fields.stated_payment,
-        transaction_date: new Date(),
-      } : undefined
     }
+
+    // Build ledger entries. Winner round gets INSTALLMENT_PAID + AUCTION_PAYOUT_RECEIVED.
+    // Non-winner gets INSTALLMENT_PAID only.
+    // No ledger entry at all if the stated_payment is absent.
+    const ledgerEntries: ConfirmedIngestion['ledger_entries'] = []
+
+    if (parsedFields?.stated_payment) {
+      ledgerEntries.push({
+        entry_type: 'INSTALLMENT_PAID',
+        amount: parsedFields.stated_payment,
+        transaction_date: new Date(),
+      })
+    }
+
+    if (wonByUs && parsedFields?.our_payout_amount) {
+      // Actual payout explicitly recorded — create the inflow entry.
+      ledgerEntries.push({
+        entry_type: 'AUCTION_PAYOUT_RECEIVED',
+        amount: parsedFields.our_payout_amount,
+        transaction_date: new Date(),
+      })
+    }
+    // If wonByUs but our_payout_amount is absent, the warning was already emitted by the parser.
+    // Do NOT fabricate an amount. The user must enter it manually via a ledger correction.
+
+    confirmed.ledger_entries = ledgerEntries.length > 0 ? ledgerEntries : undefined
 
     const persistResult = await persistConfirmedIngestion(supabase, confirmed)
 

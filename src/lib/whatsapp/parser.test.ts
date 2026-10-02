@@ -729,3 +729,221 @@ describe('Parser does not calculate — extraction only', () => {
     expect(result.fields).not.toHaveProperty('member_thallu')
   })
 })
+
+// ─────────────────────────────────────────────────────────────────
+// 22. Phase 7C — CASH FLOW COMPLETENESS TESTS
+// ─────────────────────────────────────────────────────────────────
+
+// A. NORMAL + we did not win — won_by_us must NOT be set
+describe('Phase 7C.A — NORMAL non-winner: won_by_us is NOT set', () => {
+  it('no won_by_us field when message has no winner indicator', () => {
+    const result = parseWhatsAppMessage(FIXTURE_3L_NORMAL)
+    assertSuccess(result)
+    expect(result.fields.won_by_us).toBeUndefined()
+    expect(result.fields.our_payout_amount).toBeUndefined()
+  })
+})
+
+// B. NORMAL + we explicitly won — won_by_us must be true
+describe('Phase 7C.B — NORMAL winner: explicit "we won" indicator sets won_by_us', () => {
+  const winnerMsg = `
+தள்ளு 56000
+கமிஷன் 7500
+ஒரு நபர் தள்ளு 1940
+கட்ட வேண்டிய தொகை 10060
+we won
+`
+  it('won_by_us is true', () => {
+    const result = parseWhatsAppMessage(winnerMsg)
+    if (result.kind !== 'error') {
+      expect(result.fields.won_by_us).toBe(true)
+    }
+  })
+
+  it('won_by_us via Tamil நாம் வென்றோம்', () => {
+    const msg = `தள்ளு 56000\nகமிஷன் 7500\nஒரு நபர் தள்ளு 1940\nகட்ட வேண்டிய தொகை 10060\nநாம் வென்றோம்`
+    const result = parseWhatsAppMessage(msg)
+    if (result.kind !== 'error') {
+      expect(result.fields.won_by_us).toBe(true)
+    }
+  })
+
+  it('won_by_us via "won by us"', () => {
+    const msg = `தள்ளு 56000\nகமிஷன் 7500\nஒரு நபர் தள்ளு 1940\nகட்ட வேண்டிய தொகை 10060\nwon by us`
+    const result = parseWhatsAppMessage(msg)
+    if (result.kind !== 'error') {
+      expect(result.fields.won_by_us).toBe(true)
+    }
+  })
+})
+
+// C. NORMAL + winner + payout explicitly stated — our_payout_amount must be recorded
+describe('Phase 7C.C — NORMAL winner: explicit payout amount is recorded', () => {
+  const winnerWithPayoutMsg = `
+தள்ளு 56000
+கமிஷன் 7500
+ஒரு நபர் தள்ளு 1940
+கட்ட வேண்டிய தொகை 10060
+we won
+payout 244000
+`
+  it('our_payout_amount is extracted from explicit label', () => {
+    const result = parseWhatsAppMessage(winnerWithPayoutMsg)
+    if (result.kind !== 'error') {
+      expect(result.fields.won_by_us).toBe(true)
+      expect(result.fields.our_payout_amount).toBe(244_000)
+    }
+  })
+
+  it('our_payout_amount via "we received" label', () => {
+    const msg = `தள்ளு 56000\nகமிஷன் 7500\nஒரு நபர் தள்ளு 1940\nகட்ட வேண்டிய தொகை 10060\nwe won\nwe received 244000`
+    const result = parseWhatsAppMessage(msg)
+    if (result.kind !== 'error') {
+      expect(result.fields.won_by_us).toBe(true)
+      expect(result.fields.our_payout_amount).toBe(244_000)
+    }
+  })
+})
+
+// D. NORMAL — winner identity ambiguous: won_by_us must NOT be set
+describe('Phase 7C.D — NORMAL: ambiguous winner identity → won_by_us NOT set', () => {
+  it('normal auction without any winner indicator has no won_by_us', () => {
+    const result = parseWhatsAppMessage(FIXTURE_3L_NORMAL)
+    assertSuccess(result)
+    // No "we won" indicator — won_by_us must be absent
+    expect(result.fields.won_by_us).toBeUndefined()
+  })
+})
+
+// E. SPECIAL_NO_AUCTION — correctly typed, no payout invented
+describe('Phase 7C.E — SPECIAL_NO_AUCTION: correctly typed', () => {
+  it('event_type is SPECIAL_NO_AUCTION', () => {
+    const result = parseWhatsAppMessage(FIXTURE_SPECIAL_NO_AUCTION)
+    expect(result.kind).not.toBe('error')
+    if (result.kind !== 'error') {
+      expect(result.event_type).toBe('SPECIAL_NO_AUCTION')
+    }
+  })
+
+  it('no our_payout_amount invented for SPECIAL_NO_AUCTION without explicit payout label', () => {
+    const result = parseWhatsAppMessage(FIXTURE_SPECIAL_NO_AUCTION)
+    if (result.kind !== 'error') {
+      expect(result.fields.our_payout_amount).toBeUndefined()
+    }
+  })
+})
+
+// F. FINAL — correctly typed, no payout invented
+describe('Phase 7C.F — FINAL round: correctly typed, no invented payout', () => {
+  const finalMsg = `
+final round
+கமிஷன் 7500
+கட்ட வேண்டிய தொகை 12000
+`
+  it('event_type is FINAL', () => {
+    const result = parseWhatsAppMessage(finalMsg)
+    expect(result.kind).not.toBe('error')
+    if (result.kind !== 'error') {
+      expect(result.event_type).toBe('FINAL')
+    }
+  })
+
+  it('no our_payout_amount invented for FINAL without explicit payout label', () => {
+    const result = parseWhatsAppMessage(finalMsg)
+    if (result.kind !== 'error') {
+      expect(result.fields.our_payout_amount).toBeUndefined()
+    }
+  })
+})
+
+// G. UNKNOWN — ambiguous event preserved
+describe('Phase 7C.G — UNKNOWN: ambiguous event stays UNKNOWN', () => {
+  const unknownMsg = `தள்ளு 1234\nround 1`
+  it('event_type is UNKNOWN for insufficient evidence', () => {
+    const result = parseWhatsAppMessage(unknownMsg)
+    expect(result.kind).not.toBe('error')
+    if (result.kind !== 'error') {
+      expect(result.event_type).toBe('UNKNOWN')
+    }
+  })
+})
+
+// H. KULUKAL — no invented amount when thallu unknown
+describe('Phase 7C.H — KULUKAL with unknown thallu: no invented amount', () => {
+  // A KULUKAL event that has just enough to be a chit message but no thallu
+  const kulukalMsg = `
+கமிஷன் 7500
+கட்ட வேண்டிய தொகை 12000
+round 7
+`
+  it('produces partial or UNKNOWN — no thallu invented', () => {
+    const result = parseWhatsAppMessage(kulukalMsg)
+    // Should be partial (missing thallu) or UNKNOWN — never NORMAL with thallu=0
+    if (result.kind === 'success' || result.kind === 'partial') {
+      expect(result.fields.thallu).toBeUndefined()
+      expect(result.event_type).not.toBe('NORMAL')
+    }
+  })
+
+  it('does NOT invent thallu=0 for ambiguous KULUKAL-like message', () => {
+    const result = parseWhatsAppMessage(kulukalMsg)
+    if (result.kind !== 'error') {
+      expect(result.fields.thallu).not.toBe(0)
+    }
+  })
+})
+
+// I. Correct ledger entry types: parser does NOT produce ledger entries
+describe('Phase 7C.I — Parser never produces ledger entries directly', () => {
+  it('parse result has no entry_type or ledger_entry fields', () => {
+    const result = parseWhatsAppMessage(FIXTURE_3L_NORMAL)
+    expect(result).not.toHaveProperty('entry_type')
+    expect(result).not.toHaveProperty('ledger_entry')
+    expect(result).not.toHaveProperty('ledger_entries')
+  })
+})
+
+// J. Duplicate protection: hash consistency remains intact
+describe('Phase 7C.J — Duplicate source message protection', () => {
+  it('same message produces same content_hash regardless of won_by_us indicator', () => {
+    const h1 = parseWhatsAppMessage(FIXTURE_3L_NORMAL).content_hash
+    const h2 = parseWhatsAppMessage(FIXTURE_3L_NORMAL).content_hash
+    expect(h1).toBe(h2)
+  })
+
+  it('message with we-won indicator produces a different hash from without', () => {
+    const msgWithWin = FIXTURE_3L_NORMAL + '\nwe won'
+    const h1 = parseWhatsAppMessage(FIXTURE_3L_NORMAL).content_hash
+    const h2 = parseWhatsAppMessage(msgWithWin).content_hash
+    expect(h1).not.toBe(h2)
+  })
+})
+
+// L. No fabricated AUCTION_PAYOUT_RECEIVED
+describe('Phase 7C.L — Parser never fabricates payout amounts', () => {
+  it('our_payout_amount is NOT set for a normal non-winner message', () => {
+    const result = parseWhatsAppMessage(FIXTURE_3L_NORMAL)
+    assertSuccess(result)
+    expect(result.fields.our_payout_amount).toBeUndefined()
+  })
+
+  it('our_payout_amount is NOT set for SPECIAL_NO_AUCTION without explicit payout label', () => {
+    const result = parseWhatsAppMessage(FIXTURE_SPECIAL_NO_AUCTION)
+    if (result.kind !== 'error') {
+      expect(result.fields.our_payout_amount).toBeUndefined()
+    }
+  })
+
+  it('won_by_us without explicit payout label emits a warning (not an invented amount)', () => {
+    const msg = `தள்ளு 56000\nகமிஷன் 7500\nஒரு நபர் தள்ளு 1940\nகட்ட வேண்டிய தொகை 10060\nwe won`
+    const result = parseWhatsAppMessage(msg)
+    if (result.kind !== 'error') {
+      expect(result.fields.won_by_us).toBe(true)
+      // Amount NOT invented
+      expect(result.fields.our_payout_amount).toBeUndefined()
+      // Warning was emitted
+      const hasWarning = result.warnings.some(w => w.includes('our_payout_amount'))
+      expect(hasWarning).toBe(true)
+    }
+  })
+})

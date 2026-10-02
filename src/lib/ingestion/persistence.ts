@@ -64,27 +64,32 @@ export async function persistConfirmedIngestion(
       auctionEventId = auction.id
     }
 
-    // 2. Insert ledger entry if confirmed
-    if (confirmed.ledger_entry && confirmed.chit_id) {
-      const { data: ledger, error: ledgerError } = await supabase
-        .from('ledger_entries')
-        .insert({
-          profile_id: confirmed.profile_id,
-          chit_id: confirmed.chit_id,
-          auction_event_id: auctionEventId,
-          entry_type: confirmed.ledger_entry.entry_type,
-          amount: confirmed.ledger_entry.amount,
-          transaction_date: confirmed.ledger_entry.transaction_date,
-          notes: confirmed.ledger_entry.notes
-        })
-        .select('id')
-        .single()
+    // 2. Insert ledger entries if provided
+    // Supports both the new `ledger_entries` array and the deprecated `ledger_entry` single field.
+    const entries = confirmed.ledger_entries ?? (confirmed.ledger_entry ? [confirmed.ledger_entry] : [])
 
-      if (ledgerError) {
-        // Rollback attempt for auction? Not perfectly safe without RPC.
-        return { success: false, error: `Failed to insert ledger_entry: ${ledgerError.message}` }
+    if (entries.length > 0 && confirmed.chit_id) {
+      for (const entry of entries) {
+        const { data: ledger, error: ledgerError } = await supabase
+          .from('ledger_entries')
+          .insert({
+            profile_id: confirmed.profile_id,
+            chit_id: confirmed.chit_id,
+            auction_event_id: auctionEventId,
+            entry_type: entry.entry_type,
+            amount: entry.amount,
+            transaction_date: entry.transaction_date,
+            notes: entry.notes
+          })
+          .select('id')
+          .single()
+
+        if (ledgerError) {
+          // Not perfectly safe without RPC, but surface the error immediately.
+          return { success: false, error: `Failed to insert ledger_entry: ${ledgerError.message}` }
+        }
+        ledgerEntryId = ledger.id
       }
-      ledgerEntryId = ledger.id
     }
 
     // 3. Insert or update source message

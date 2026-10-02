@@ -69,7 +69,7 @@ export interface ConfirmedAuctionEvent {
   net_thallu?: number
   member_thallu?: number
   non_winner_payment?: number
-  won_by_us?: boolean
+  won_by_us?: boolean | null
   our_payout_amount?: number
   calculation_status: CalculationStatus
   auction_date?: Date
@@ -94,5 +94,13 @@ export interface ConfirmedIngestion {
   existing_source_message_id?: string
 
   auction_event?: ConfirmedAuctionEvent
+  /**
+   * One or more ledger entries to persist in insertion order.
+   * A winner round produces 2 entries: INSTALLMENT_PAID + AUCTION_PAYOUT_RECEIVED.
+   * A non-winner round produces 1 entry: INSTALLMENT_PAID.
+   * If omitted, no ledger entry is created.
+   */
+  ledger_entries?: ConfirmedLedgerEntry[]
+  /** @deprecated Use ledger_entries instead. Kept for backwards compatibility only. */
   ledger_entry?: ConfirmedLedgerEntry
 }

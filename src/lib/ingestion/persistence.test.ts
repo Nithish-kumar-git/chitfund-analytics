@@ -322,4 +322,152 @@ describe('Persistence Layer', () => {
     expect(capturedInsertPayload.non_winner_payment).toBeNull()
   })
 
+  // ─── Phase 7C: Multi-Ledger Entry Tests ──────────────────────────────────
+
+  it('Phase 7C.A — NORMAL non-winner: only INSTALLMENT_PAID is inserted (no payout)', async () => {
+    const ledgerInsertArgs: any[] = []
+    const supabase = {
+      from: vi.fn((table: string) => {
+        if (table === 'auction_events') {
+          return {
+            insert: vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ single: vi.fn().mockResolvedValue({ data: { id: 'ae-1' }, error: null }) }) }),
+            update: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) })
+          }
+        }
+        if (table === 'ledger_entries') {
+          return {
+            insert: vi.fn((data: any) => {
+              ledgerInsertArgs.push(data)
+              return { select: vi.fn().mockReturnValue({ single: vi.fn().mockResolvedValue({ data: { id: 'le-1' }, error: null }) }) }
+            })
+          }
+        }
+        return { insert: vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ single: vi.fn().mockResolvedValue({ data: { id: 'sm-1' }, error: null }) }) }), update: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }) }
+      })
+    } as any
+
+    const payload: ConfirmedIngestion = {
+      profile_id: 'u1', chit_id: 'c1', raw_text: 'txt', content_hash: 'h1', parse_status: 'PARSED',
+      auction_event: { round_number: 5, event_type: 'NORMAL', won_by_us: false, calculation_status: 'VERIFIED_FORMULA' },
+      ledger_entries: [
+        { entry_type: 'INSTALLMENT_PAID', amount: 10060, transaction_date: new Date() }
+      ]
+    }
+
+    const result = await persistConfirmedIngestion(supabase, payload)
+    expect(result.success).toBe(true)
+    expect(ledgerInsertArgs).toHaveLength(1)
+    expect(ledgerInsertArgs[0].entry_type).toBe('INSTALLMENT_PAID')
+    expect(ledgerInsertArgs[0].amount).toBe(10060)
+  })
+
+  it('Phase 7C.B — NORMAL winner: both INSTALLMENT_PAID and AUCTION_PAYOUT_RECEIVED are inserted', async () => {
+    const ledgerInsertArgs: any[] = []
+    const supabase = {
+      from: vi.fn((table: string) => {
+        if (table === 'auction_events') {
+          return {
+            insert: vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ single: vi.fn().mockResolvedValue({ data: { id: 'ae-1' }, error: null }) }) }),
+            update: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) })
+          }
+        }
+        if (table === 'ledger_entries') {
+          return {
+            insert: vi.fn((data: any) => {
+              ledgerInsertArgs.push(data)
+              return { select: vi.fn().mockReturnValue({ single: vi.fn().mockResolvedValue({ data: { id: 'le-x' }, error: null }) }) }
+            })
+          }
+        }
+        return { insert: vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ single: vi.fn().mockResolvedValue({ data: { id: 'sm-1' }, error: null }) }) }), update: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }) }
+      })
+    } as any
+
+    const payload: ConfirmedIngestion = {
+      profile_id: 'u1', chit_id: 'c1', raw_text: 'txt', content_hash: 'h1', parse_status: 'PARSED',
+      auction_event: { round_number: 9, event_type: 'NORMAL', won_by_us: true, our_payout_amount: 244000, calculation_status: 'VERIFIED_FORMULA' },
+      ledger_entries: [
+        { entry_type: 'INSTALLMENT_PAID', amount: 10060, transaction_date: new Date() },
+        { entry_type: 'AUCTION_PAYOUT_RECEIVED', amount: 244000, transaction_date: new Date() }
+      ]
+    }
+
+    const result = await persistConfirmedIngestion(supabase, payload)
+    expect(result.success).toBe(true)
+    expect(ledgerInsertArgs).toHaveLength(2)
+    expect(ledgerInsertArgs[0].entry_type).toBe('INSTALLMENT_PAID')
+    expect(ledgerInsertArgs[1].entry_type).toBe('AUCTION_PAYOUT_RECEIVED')
+    expect(ledgerInsertArgs[1].amount).toBe(244000)
+  })
+
+  it('Phase 7C.L — No fabricated AUCTION_PAYOUT_RECEIVED when won_by_us is false', async () => {
+    const ledgerInsertArgs: any[] = []
+    const supabase = {
+      from: vi.fn((table: string) => {
+        if (table === 'auction_events') {
+          return { insert: vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ single: vi.fn().mockResolvedValue({ data: { id: 'ae-1' }, error: null }) }) }) }
+        }
+        if (table === 'ledger_entries') {
+          return {
+            insert: vi.fn((data: any) => {
+              ledgerInsertArgs.push(data)
+              return { select: vi.fn().mockReturnValue({ single: vi.fn().mockResolvedValue({ data: { id: 'le-1' }, error: null }) }) }
+            })
+          }
+        }
+        return { insert: vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ single: vi.fn().mockResolvedValue({ data: { id: 'sm-1' }, error: null }) }) }), update: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }) }
+      })
+    } as any
+
+    // won_by_us is false — ledger_entries only has INSTALLMENT_PAID
+    const payload: ConfirmedIngestion = {
+      profile_id: 'u1', chit_id: 'c1', raw_text: 'txt', content_hash: 'h1', parse_status: 'PARSED',
+      auction_event: { round_number: 3, event_type: 'NORMAL', won_by_us: false, calculation_status: 'VERIFIED_FORMULA' },
+      ledger_entries: [
+        { entry_type: 'INSTALLMENT_PAID', amount: 10060, transaction_date: new Date() }
+      ]
+    }
+
+    await persistConfirmedIngestion(supabase, payload)
+    expect(ledgerInsertArgs).toHaveLength(1)
+    const types = ledgerInsertArgs.map((a: any) => a.entry_type)
+    expect(types).not.toContain('AUCTION_PAYOUT_RECEIVED')
+  })
+
+  it('Phase 7C — backwards compat: deprecated ledger_entry still works', async () => {
+    const ledgerInsertArgs: any[] = []
+    const supabase = {
+      from: vi.fn((table: string) => {
+        if (table === 'auction_events') {
+          return {
+            insert: vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ single: vi.fn().mockResolvedValue({ data: { id: 'ae-1' }, error: null }) }) }),
+            update: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) })
+          }
+        }
+        if (table === 'ledger_entries') {
+          return {
+            insert: vi.fn((data: any) => {
+              ledgerInsertArgs.push(data)
+              return { select: vi.fn().mockReturnValue({ single: vi.fn().mockResolvedValue({ data: { id: 'le-1' }, error: null }) }) }
+            })
+          }
+        }
+        return { insert: vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ single: vi.fn().mockResolvedValue({ data: { id: 'sm-1' }, error: null }) }) }), update: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }) }
+      })
+    } as any
+
+    // Using the deprecated ledger_entry (single)
+    const payload: ConfirmedIngestion = {
+      profile_id: 'u1', chit_id: 'c1', raw_text: 'txt', content_hash: 'h1', parse_status: 'PARSED',
+      auction_event: { round_number: 1, event_type: 'NORMAL', calculation_status: 'VERIFIED_FORMULA' },
+      ledger_entry: { entry_type: 'INSTALLMENT_PAID', amount: 9800, transaction_date: new Date() }
+    }
+
+    const result = await persistConfirmedIngestion(supabase, payload)
+    expect(result.success).toBe(true)
+    expect(ledgerInsertArgs).toHaveLength(1)
+    expect(ledgerInsertArgs[0].entry_type).toBe('INSTALLMENT_PAID')
+    expect(ledgerInsertArgs[0].amount).toBe(9800)
+  })
+
 })

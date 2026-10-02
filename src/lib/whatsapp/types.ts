@@ -34,6 +34,19 @@ export interface ParsedFields {
   stated_member_thallu?: number
   /** Payment amount stated in the message. Tamil: கட்ட வேண்டிய தொகை */
   stated_payment?: number
+  /**
+   * Explicitly stated in the message that WE (our family/member) won this round.
+   * ONLY set to true when the message contains a recognisable "we won" indicator.
+   * NEVER inferred. If absent/ambiguous, this field is undefined (not false).
+   */
+  won_by_us?: true
+  /**
+   * The actual payout amount explicitly stated in the message as received by us.
+   * Only populated when won_by_us is true AND an explicit amount is given.
+   * NEVER computed from face_value - thallu. Use auction_events.our_payout_amount
+   * as the recorded source of truth.
+   */
+  our_payout_amount?: number
 }
 
 /**

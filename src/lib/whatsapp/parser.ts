@@ -22,6 +22,8 @@ import {
   ROUND_NUMBER_PATTERN,
   FACE_VALUE_LAKH_PATTERN,
   FACE_VALUE_AMOUNT_PATTERN,
+  WE_WON_PATTERNS,
+  OUR_PAYOUT_PATTERN,
   extractMoneyFromMatch,
 } from './labels'
 import type {
@@ -223,6 +225,31 @@ function extractFields(normalised: string, warnings: string[]): ParsedFields {
     } else {
       warnings.push(
         `Could not parse stated_payment from: "${paymentStr}"`,
+      )
+    }
+  }
+
+  // Won-by-us detection: ONLY set true when an explicit indicator is present.
+  // Never set to false here — absence means unknown, not "did not win".
+  const explicitlyWonByUs = WE_WON_PATTERNS.some(p => p.test(normalised))
+  if (explicitlyWonByUs) {
+    fields.won_by_us = true
+
+    // Our payout amount — only extract when we won AND an explicit amount label is present.
+    // NEVER compute from face_value - thallu.
+    const payoutMatch = normalised.match(OUR_PAYOUT_PATTERN)
+    const payoutStr = extractMoneyFromMatch(payoutMatch)
+    if (payoutStr !== undefined) {
+      const v = parseMoneyString(payoutStr)
+      if (v !== undefined) {
+        fields.our_payout_amount = v
+      } else {
+        warnings.push(`Could not parse our_payout_amount from: "${payoutStr}"`)
+      }
+    } else {
+      warnings.push(
+        'Won-by-us indicator found but no explicit payout amount stated. ' +
+        'our_payout_amount will NOT be recorded. Enter it manually after confirmation.',
       )
     }
   }

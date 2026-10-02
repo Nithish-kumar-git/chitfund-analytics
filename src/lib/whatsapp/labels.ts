@@ -51,6 +51,30 @@ export const FINAL_ROUND_PATTERNS: RegExp[] = [
 ]
 
 // ─────────────────────────────────────────────────────────────────
+// "We won" indicator — ONLY matches explicit indicators, never inferred
+// Tamil: நாம் வென்றோம் / சீட்டு கிடைத்தது ("chit received" = we received the payout)
+// English: "we won", "won by us", "our turn"
+// ─────────────────────────────────────────────────────────────────
+export const WE_WON_PATTERNS: RegExp[] = [
+  /we\s+won/i,
+  /won\s+by\s+us/i,
+  /our\s+turn/i,
+  /நாம்\s*வென்றோம்/u,          // நாம் வென்றோம்
+  /சீட்டு\s*கிடைத்தது/u,     // சீட்டு கிடைத்தது (chit received)
+  /நமுக்கு\s*கிடைத்தது/u,    // நமுக்கு கிடைத்தது (received by us)
+]
+
+// ─────────────────────────────────────────────────────────────────
+// Our payout amount — only when explicitly stated in the message
+// e.g. "payout: ₹2,44,000", "we received ₹2,44,000", "நமுக்கு கிடைத்த தொகை 2,44,000"
+// NEVER computed from face_value - thallu
+// ─────────────────────────────────────────────────────────────────
+export const OUR_PAYOUT_PATTERN = new RegExp(
+  String.raw`(?:payout|we\s+received|our\s+payout|\u0ba8\u0bae\u0bc1\u0b95\u0bcd\u0b95\u0bc1\s*\u0b95\u0bbf\u0b9f\u0bc8\u0ba4\u0bcd\u0ba4\s*\u0ba4\u0bca\u0b95\u0bc8)${SEP}${MONEY}`,
+  'iu',
+)
+
+// ─────────────────────────────────────────────────────────────────
 // Field extraction patterns
 // Each has one named capture group: `amount`
 // ─────────────────────────────────────────────────────────────────
