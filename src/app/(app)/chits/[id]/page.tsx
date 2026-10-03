@@ -414,6 +414,7 @@ export default async function ChitDetailPage({ params }: PageProps) {
                     auctionEventId={round.id}
                     roundNumber={round.round_number}
                     currentWonByUs={round.won_by_us}
+                    eventType={round.event_type}
                   />
 
                   <RecordCashFlowForm

@@ -5,18 +5,28 @@
  *
  * Separated from cash flow recording to maintain domain semantics:
  * winner status is an auction-event fact, not a cash-flow detail.
+ *
+ * Event-type-aware behavior:
+ *   NORMAL:              NULL → We Won / Someone Else Won buttons
+ *                        TRUE/FALSE → Show status with Change option
+ *   SPECIAL_NO_AUCTION:  Always show "Not applicable — Thai Chittu / Sangam"
+ *                        If won_by_us was incorrectly set, show reset button
+ *   FINAL:               Same as NORMAL (last member wins — there IS a winner)
+ *   UNKNOWN:             Same as NORMAL
  */
 
 import { useState } from 'react'
 import { confirmWinnerStatus } from '@/app/(app)/chits/[id]/winner-actions'
-import type { ConfirmWinnerResult } from '@/app/(app)/chits/[id]/winner-actions'
-import { Trophy, Users, AlertCircle, CheckCircle2 } from 'lucide-react'
+import { resetSpecialNoAuctionWinner } from '@/app/(app)/chits/[id]/winner-actions'
+import type { ConfirmWinnerResult, ResetWinnerResult } from '@/app/(app)/chits/[id]/winner-actions'
+import { Trophy, Users, AlertCircle, CheckCircle2, Info, RotateCcw } from 'lucide-react'
 
 interface WinnerConfirmationProps {
   chitId: string
   auctionEventId: string
   roundNumber: number
   currentWonByUs: boolean | null
+  eventType: string
 }
 
 export function WinnerConfirmation({
@@ -24,11 +34,127 @@ export function WinnerConfirmation({
   auctionEventId,
   roundNumber,
   currentWonByUs,
+  eventType,
 }: WinnerConfirmationProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showChangeConfirmation, setShowChangeConfirmation] = useState(false)
   const [pendingValue, setPendingValue] = useState<boolean | null>(null)
+  const [showResetConfirmation, setShowResetConfirmation] = useState(false)
+
+  // ---------------------------------------------------------------------------
+  // SPECIAL_NO_AUCTION: Thai Chittu / Sangam — no individual winner
+  // ---------------------------------------------------------------------------
+  if (eventType === 'SPECIAL_NO_AUCTION') {
+    const handleReset = async () => {
+      setError(null)
+      setLoading(true)
+      setShowResetConfirmation(false)
+
+      try {
+        const result: ResetWinnerResult = await resetSpecialNoAuctionWinner({
+          chit_id: chitId,
+          auction_event_id: auctionEventId,
+        })
+
+        if (!result.success) {
+          setError(result.error)
+        }
+        // On success, page revalidates and component re-renders with won_by_us = null
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'An unexpected error occurred')
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    return (
+      <div className="mt-4 pt-4 border-t border-[rgba(255,255,255,0.05)]">
+        <p className="text-xs font-mono uppercase tracking-widest text-[#64748B] mb-2">
+          Winner
+        </p>
+
+        <div className="flex items-center gap-2 rounded-lg bg-[#1e1b4b]/30 border border-[#312e81]/50 p-3">
+          <Info className="h-4 w-4 text-[#818cf8] shrink-0" />
+          <span className="text-sm text-[#a5b4fc]">
+            Not applicable — Thai Chittu / Sangam
+          </span>
+        </div>
+
+        {/* If won_by_us was incorrectly set, show reset option */}
+        {currentWonByUs !== null && (
+          <div className="mt-2">
+            {showResetConfirmation ? (
+              <div className="space-y-3 rounded-lg border border-amber-900/30 bg-amber-900/10 p-4">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="h-4 w-4 text-amber-400 mt-0.5 shrink-0" />
+                  <div className="flex-1">
+                    <p className="text-sm text-amber-300 font-medium mb-1">Reset Incorrect Winner Status?</p>
+                    <p className="text-xs text-amber-400/90 mb-3">
+                      Round {roundNumber} is a Thai Chittu / Sangam round with no individual winner.
+                      This will reset the incorrectly assigned winner status
+                      (currently: <strong>{currentWonByUs ? 'We Won' : 'Someone Else Won'}</strong>)
+                      back to <strong>Not Applicable</strong>.
+                    </p>
+                    <p className="text-xs text-amber-400/70 mb-3">
+                      This will only change won_by_us. No financial data, ledger entries,
+                      or source messages will be modified.
+                    </p>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={handleReset}
+                        disabled={loading}
+                        className="px-3 py-1.5 rounded-lg text-xs font-medium bg-amber-600 hover:bg-amber-700 text-white transition-colors disabled:opacity-50"
+                      >
+                        {loading ? 'Resetting...' : 'Yes, Reset to Not Applicable'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setShowResetConfirmation(false); setError(null) }}
+                        disabled={loading}
+                        className="px-3 py-1.5 rounded-lg text-xs font-medium bg-[#1e293b] hover:bg-[#334155] text-[#CBD5E1] border border-[rgba(255,255,255,0.1)] transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 rounded-lg bg-amber-900/10 border border-amber-900/30 p-3">
+                <AlertCircle className="h-4 w-4 text-amber-500 shrink-0" />
+                <p className="text-xs text-amber-400/90 flex-1">
+                  Winner status was incorrectly set to <strong>{currentWonByUs ? 'We Won' : 'Someone Else Won'}</strong>.
+                  This round has no individual winner.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setShowResetConfirmation(true)}
+                  disabled={loading}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-amber-600/20 hover:bg-amber-600/30 text-amber-400 border border-amber-600/30 transition-colors disabled:opacity-50"
+                >
+                  <RotateCcw className="h-3 w-3" />
+                  Reset
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {error && (
+          <div className="mt-2 flex items-start gap-2 p-3 rounded-lg bg-rose-900/20 border border-rose-900/30">
+            <AlertCircle className="h-4 w-4 text-rose-400 mt-0.5 shrink-0" />
+            <p className="text-xs text-rose-300">{error}</p>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // ---------------------------------------------------------------------------
+  // NORMAL / FINAL / UNKNOWN: Standard winner confirmation workflow
+  // ---------------------------------------------------------------------------
 
   const handleConfirm = async (wonByUs: boolean) => {
     // If changing existing value, require confirmation
