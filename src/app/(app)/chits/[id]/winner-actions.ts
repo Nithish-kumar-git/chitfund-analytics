@@ -228,3 +228,85 @@ export async function resetSpecialNoAuctionWinner(
   revalidatePath(`/chits/${chit_id}`)
   return { success: true }
 }
+
+// ---------------------------------------------------------------------------
+// Manual Event Classification (Phase 8B)
+// ---------------------------------------------------------------------------
+
+const classifyEventSchema = z.object({
+  chit_id: z.string().uuid('Invalid chit ID'),
+  auction_event_id: z.string().uuid('Invalid auction event ID'),
+  new_event_type: z.enum(['NORMAL', 'SPECIAL_NO_AUCTION', 'FINAL', 'UNKNOWN']),
+})
+
+export type ClassifyEventResult =
+  | { success: true }
+  | { success: false; error: string }
+
+export async function classifyAuctionEvent(
+  data: z.infer<typeof classifyEventSchema>
+): Promise<ClassifyEventResult> {
+  const parsed = classifyEventSchema.safeParse(data)
+  if (!parsed.success) {
+    return { success: false, error: 'Invalid input: ' + parsed.error.message }
+  }
+  const { chit_id, auction_event_id, new_event_type } = parsed.data
+
+  const supabase = await createClient()
+
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { success: false, error: 'Not authenticated' }
+
+  // 1. Verify chit ownership
+  const { data: chit, error: chitError } = await supabase
+    .from('chits')
+    .select('id, profile_id')
+    .eq('id', chit_id)
+    .eq('profile_id', user.id)
+    .single()
+
+  if (chitError || !chit) return { success: false, error: 'Chit not found or permission denied' }
+
+  // 2. Fetch event
+  const { data: auctionEvent, error: eventError } = await supabase
+    .from('auction_events')
+    .select('id, chit_id, event_type, profile_id')
+    .eq('id', auction_event_id)
+    .eq('chit_id', chit_id)
+    .single()
+
+  if (eventError || !auctionEvent || (auctionEvent as any).profile_id !== user.id) {
+    return { success: false, error: 'Auction event not found or permission denied' }
+  }
+  
+  if ((auctionEvent as any).event_type !== 'UNKNOWN') {
+    return { success: false, error: 'Only UNKNOWN events can be manually classified.' }
+  }
+  
+  if (new_event_type === 'UNKNOWN') {
+    return { success: true } // No-op
+  }
+
+  const updates: any = {
+    event_type: new_event_type,
+    calculation_status: 'MANUAL_OVERRIDE'
+  }
+  
+  if (new_event_type === 'SPECIAL_NO_AUCTION') {
+    updates.won_by_us = null
+  }
+
+  const { error: updateError } = await (supabase as any)
+    .from('auction_events')
+    .update(updates)
+    .eq('id', auction_event_id)
+    .eq('profile_id', user.id)
+
+  if (updateError) {
+    return { success: false, error: `Failed to classify event: ${updateError.message}` }
+  }
+
+  revalidatePath(`/chits/${chit_id}`)
+  return { success: true }
+}
+

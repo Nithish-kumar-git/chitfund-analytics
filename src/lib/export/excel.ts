@@ -141,7 +141,7 @@ export function generateExportWorkbook(
         'Thallu': event.thallu ?? '',
         'Commission': event.commission ?? '',
         'Net Thallu': event.net_thallu ?? '',
-        'Member Thallu': event.member_thallu ?? '',
+        'Dividend / Member Thallu': event.member_thallu ?? '',
         'Expected Installment': event.non_winner_payment ?? '',
         'Winner Status': winnerStatus,
         'Actual Installment Recorded': actualInstallment > 0 ? actualInstallment : '',
@@ -275,6 +275,18 @@ export function generateExportWorkbook(
 
   const wsQuality = XLSX.utils.json_to_sheet(qualityData)
   XLSX.utils.book_append_sheet(wb, wsQuality, 'Data Quality')
+
+  // ─────────────────────────────────────────────────────────────
+  // SHEET 5: Report Info
+  // ─────────────────────────────────────────────────────────────
+  const infoData = [
+    { 'Information': 'Generated Date', 'Value': new Date().toISOString().split('T')[0] },
+    { 'Information': 'Disclaimer 1', 'Value': 'Actual financial data only.' },
+    { 'Information': 'Disclaimer 2', 'Value': 'Expected amounts are not treated as actual payments.' },
+    { 'Information': 'ROI Notice', 'Value': 'ROI is unavailable when the chit is incomplete, unverified, or flagged for mismatch.' }
+  ]
+  const wsInfo = XLSX.utils.json_to_sheet(infoData)
+  XLSX.utils.book_append_sheet(wb, wsInfo, 'Report Info')
 
   return wb
 }

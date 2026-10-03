@@ -8,6 +8,8 @@ import { computeChitSummary } from '@/lib/analytics/summary'
 import { ChitSummaryCards } from '@/components/analytics/summary-cards'
 import { RoiSummaryCard } from '@/components/analytics/roi-summary'
 import { LedgerTable } from '@/components/ledger/ledger-table'
+import { EventClassification } from '@/components/auction/event-classification'
+import { ExportChitButton } from '@/components/export-chit-button'
 import type { LedgerRow } from '@/components/ledger/ledger-table'
 import { computeCompletedRoi } from '@/lib/financial/roi'
 import type { RoiInput, EffectiveLedgerEntry } from '@/lib/financial/roi'
@@ -232,6 +234,7 @@ export default async function ChitDetailPage({ params }: PageProps) {
             <StatusBadge status={typedChit.status} />
           </div>
           <div className="flex items-center gap-2">
+            <ExportChitButton chitId={typedChit.id} />
             <Link
               href={`/chits/${typedChit.id}/queue`}
               className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#1e293b] border border-[rgba(255,255,255,0.1)] px-4 py-2 text-sm font-medium text-[#CBD5E1] hover:bg-[#334155] hover:text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
@@ -408,6 +411,12 @@ export default async function ChitDetailPage({ params }: PageProps) {
                       </div>
                     </dl>
                   )}
+
+                  <EventClassification
+                    chitId={id}
+                    auctionEventId={round.id}
+                    eventType={round.event_type}
+                  />
 
                   <WinnerConfirmation
                     chitId={id}

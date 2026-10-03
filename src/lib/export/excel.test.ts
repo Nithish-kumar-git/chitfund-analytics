@@ -63,7 +63,7 @@ describe('Excel Export Builder', () => {
 
   it('empty inputs do not crash', () => {
     const wb = generateExportWorkbook([], [], [])
-    expect(wb.SheetNames.length).toBe(4)
+    expect(wb.SheetNames.length).toBe(5)
   })
 
   it('active chit ROI is unavailable', () => {
