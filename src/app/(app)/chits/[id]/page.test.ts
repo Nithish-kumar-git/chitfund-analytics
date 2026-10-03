@@ -183,6 +183,7 @@ describe('Chit Detail Page — Phase 5A (Read-Only History)', () => {
     expect(s).toContain('Normal auction calculations are not applicable for ","SPECIAL_NO_AUCTION",')
   })
 
+
   it('renders multiple rounds correctly in descending order, including mixed event types', async () => {
     mockState.auctionData = [
       { id: 'round-3', chit_id: CHIT_ID, round_number: 3, event_type: 'NORMAL',

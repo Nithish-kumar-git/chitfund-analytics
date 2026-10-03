@@ -418,25 +418,29 @@ export default async function ChitDetailPage({ params }: PageProps) {
                     eventType={round.event_type}
                   />
 
-                  <WinnerConfirmation
-                    chitId={id}
-                    auctionEventId={round.id}
-                    roundNumber={round.round_number}
-                    currentWonByUs={round.won_by_us}
-                    eventType={round.event_type}
-                  />
+                  {round.event_type !== 'UNKNOWN' && (
+                    <>
+                      <WinnerConfirmation
+                        chitId={id}
+                        auctionEventId={round.id}
+                        roundNumber={round.round_number}
+                        currentWonByUs={round.won_by_us}
+                        eventType={round.event_type}
+                      />
 
-                  <RecordCashFlowForm
-                    chitId={id}
-                    auctionEventId={round.id}
-                    roundNumber={round.round_number}
-                    wonByUs={round.won_by_us}
-                    expectedInstallment={round.non_winner_payment ? Number(round.non_winner_payment) : null}
-                    expectedPayout={round.our_payout_amount ? Number(round.our_payout_amount) : null}
-                    existingInstallments={eventCounts.installments}
-                    existingPayouts={eventCounts.payouts}
-                    eventType={round.event_type}
-                  />
+                      <RecordCashFlowForm
+                        chitId={id}
+                        auctionEventId={round.id}
+                        roundNumber={round.round_number}
+                        wonByUs={round.won_by_us}
+                        expectedInstallment={round.non_winner_payment ? Number(round.non_winner_payment) : null}
+                        expectedPayout={round.our_payout_amount ? Number(round.our_payout_amount) : null}
+                        existingInstallments={eventCounts.installments}
+                        existingPayouts={eventCounts.payouts}
+                        eventType={round.event_type}
+                      />
+                    </>
+                  )}
                 </Card>
               )
             })}
