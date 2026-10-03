@@ -50,3 +50,40 @@ next-env.d.ts
 
 # dev verification screenshots (not source)
 screenshot-*.png
+
+# Phase 7H private source data
+3L-Chit-A.txt
+3L-Chit-B.txt
+3L-Chit-C.txt
+
+# Playwright auth files
+playwright-auth.json
+save-auth.js
+
+# Phase 7H temporary test scripts
+execute-authenticated-import.js
+execute-import-with-login.js
+import-fresh-login.js
+import-with-browser-auth.js
+import-phase7h.js
+trigger-import.js
+phase7h-dryrun.js
+final-dryrun.js
+diagnose-auth.js
+verify-phase7h-import.js
+e2e-7g.js
+e2e-vercel.js
+test-ssr-auth.js
+test-ssr-auth-fixed.js
+
+# Phase 7H test output
+test-error.txt
+test-output.txt
+vercel-dump.html
+e2e-debug-screenshot.png
+
+# Temporary verification endpoints
+src/app/api/verify-phase7h/
+
+# Supabase CLI temp files
+supabase/.temp/
