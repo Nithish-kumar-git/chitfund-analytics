@@ -16,7 +16,7 @@
 import { useState } from 'react'
 import { Card } from '@/components/ui/card'
 import { CheckCircle2, TrendingUp, AlertCircle, ShieldCheck } from 'lucide-react'
-import type { RoiOutcome, RoiUnavailableReason, EffectiveLedgerEntry } from '@/lib/financial/roi'
+import { computeActiveMetrics, type RoiOutcome, type RoiUnavailableReason, type EffectiveLedgerEntry } from '@/lib/financial/roi'
 import { VerificationDialog } from './verification-dialog'
 
 // ---------------------------------------------------------------------------
@@ -55,21 +55,44 @@ interface RoiSummaryCardProps {
 export function RoiSummaryCard({ outcome, chitId, effectiveEntries }: RoiSummaryCardProps) {
   const [dialogOpen, setDialogOpen] = useState(false)
 
-  // ── Active chit: quiet hint ──────────────────────────────────────────────
+  // ── Active chit: quiet hint with active cash flow metrics ────────────────
   if (outcome.status === 'UNAVAILABLE') {
     const reasons = outcome.reasons
     const isActiveOnly = reasons.length === 1 && reasons[0] === 'CHIT_NOT_COMPLETED'
 
     if (isActiveOnly) {
+      const activeMetrics = computeActiveMetrics(effectiveEntries)
+
       return (
-        <Card className="p-5 border border-dashed border-[rgba(255,255,255,0.06)] bg-transparent">
-          <div className="flex items-center gap-3">
-            <div className="rounded-full bg-[#1e293b] p-2">
-              <TrendingUp className="h-4 w-4 text-[#64748B]" />
+        <Card className="overflow-hidden">
+          <div className="bg-[#1e293b]/50 p-4 border-b border-[rgba(255,255,255,0.06)] flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <TrendingUp className="h-5 w-5 text-[#64748B]" />
+              <h3 className="text-sm font-semibold text-[#e0e7ff]">Active Cash Flow</h3>
+            </div>
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#1e293b] border border-[rgba(255,255,255,0.06)] text-xs font-mono text-[#94A3B8]">
+              Final ROI available after completion
+            </div>
+          </div>
+
+          <div className="p-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 bg-[#0f172a]">
+            <div>
+              <p className="text-xs font-mono uppercase tracking-widest text-[#64748B] mb-1">Total Actual Paid</p>
+              <p className="text-xl font-semibold text-[#E2E8F0]">
+                ₹{activeMetrics.totalActualPaid.toLocaleString('en-IN')}
+              </p>
             </div>
             <div>
-              <p className="text-sm font-medium text-[#E2E8F0]">Final ROI</p>
-              <p className="text-xs text-[#94A3B8]">Available after chit completion</p>
+              <p className="text-xs font-mono uppercase tracking-widest text-[#64748B] mb-1">Total Actual Received</p>
+              <p className="text-xl font-semibold text-[#E2E8F0]">
+                ₹{activeMetrics.totalActualReceived.toLocaleString('en-IN')}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-mono uppercase tracking-widest text-[#64748B] mb-1">Net Actual Cash Flow</p>
+              <p className={`text-xl font-semibold ${activeMetrics.netActualCashFlow >= 0 ? 'text-[#4ade80]' : 'text-rose-400'}`}>
+                {activeMetrics.netActualCashFlow >= 0 ? '+' : '-'}₹{Math.abs(activeMetrics.netActualCashFlow).toLocaleString('en-IN')}
+              </p>
             </div>
           </div>
         </Card>

@@ -230,3 +230,37 @@ export function computeCompletedRoi(input: RoiInput): RoiOutcome {
     simpleRoiPercent,
   }
 }
+
+// ---------------------------------------------------------------------------
+// Active Cash Flow computation
+// ---------------------------------------------------------------------------
+
+/**
+ * Computes the running cash flow metrics for any chit (active or completed)
+ * without computing ROI or requiring completeness checks.
+ */
+export function computeActiveMetrics(effectiveEntries: EffectiveLedgerEntry[]) {
+  let totalActualPaid = 0
+  let totalActualReceived = 0
+
+  for (const entry of effectiveEntries) {
+    const t = entry.effective_entry_type
+    const amt = Math.abs(entry.amount)
+
+    if (isOutflow(t)) {
+      totalActualPaid += amt
+    } else if (isInflow(t)) {
+      totalActualReceived += amt
+    } else if (t === 'ADJUSTMENT') {
+      const { outflow, inflow } = adjustmentContribution(entry.amount)
+      totalActualPaid += outflow
+      totalActualReceived += inflow
+    }
+  }
+
+  return {
+    totalActualPaid,
+    totalActualReceived,
+    netActualCashFlow: totalActualReceived - totalActualPaid,
+  }
+}

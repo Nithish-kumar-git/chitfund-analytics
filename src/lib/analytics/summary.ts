@@ -56,21 +56,74 @@ export interface PortfolioSummary {
   totalChits: number;
   activeChits: number;
   totalFaceValue: number;
+  totalPaid: number;
+  totalReceived: number;
+  unverifiedChits: number;
 }
 
-export function computePortfolioSummary(chits: Chit[]): PortfolioSummary {
-  const activeChits = chits.filter(c => c.status === 'ACTIVE').length;
+export function computePortfolioSummary(
+  chits: Chit[],
+  ledgerEntries: any[]
+): PortfolioSummary {
+  const activeChits = chits.filter((c) => c.status === 'ACTIVE').length;
   let totalFaceValue = 0;
+  let unverifiedChits = 0;
 
   for (const chit of chits) {
     if (chit.face_value != null) {
       totalFaceValue += Number(chit.face_value);
     }
+    // A chit requires verification if it's completed but unverified
+    if (chit.status === 'COMPLETED' && !chit.verified_at) {
+      unverifiedChits++;
+    }
   }
+
+  // Calculate effective total paid/received
+  const correctedIds = new Set<string>();
+  ledgerEntries.forEach((row) => {
+    if (row.entry_type === 'MANUAL_CORRECTION' && row.corrects_entry_id) {
+      correctedIds.add(row.corrects_entry_id);
+    }
+  });
+
+  let totalPaid = 0;
+  let totalReceived = 0;
+
+  ledgerEntries.forEach((row) => {
+    if (correctedIds.has(row.id)) return; // superseded
+
+    // For manual correction, its effective type is the corrected row's type
+    let effectiveType = row.entry_type;
+    if (row.entry_type === 'MANUAL_CORRECTION' && row.corrects_entry_id) {
+      const original = ledgerEntries.find((e) => e.id === row.corrects_entry_id);
+      if (original) {
+        effectiveType = original.entry_type;
+      }
+    }
+
+    const amt = Math.abs(Number(row.amount));
+
+    if (effectiveType === 'INSTALLMENT_PAID' || effectiveType === 'LATE_FEE') {
+      totalPaid += amt;
+    } else if (
+      effectiveType === 'AUCTION_PAYOUT_RECEIVED' ||
+      effectiveType === 'MATURITY_SETTLEMENT'
+    ) {
+      totalReceived += amt;
+    } else if (effectiveType === 'ADJUSTMENT') {
+      const numAmt = Number(row.amount);
+      if (numAmt < 0) totalPaid += Math.abs(numAmt);
+      if (numAmt > 0) totalReceived += numAmt;
+    }
+  });
 
   return {
     totalChits: chits.length,
     activeChits,
     totalFaceValue,
+    totalPaid,
+    totalReceived,
+    unverifiedChits,
   };
 }

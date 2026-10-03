@@ -381,16 +381,12 @@ describe('Forwarded message artifact handling', () => {
 // ─────────────────────────────────────────────────────────────────
 // 10. MISSING FIELDS → PARTIAL
 // ─────────────────────────────────────────────────────────────────
-describe('Missing commission → partial', () => {
+describe('Missing commission → success', () => {
   const result = parseWhatsAppMessage(FIXTURE_MISSING_COMMISSION)
 
-  it('returns partial (not error)', () => expect(result.kind).toBe('partial'))
-  it('missing_fields includes commission', () => {
-    assertPartial(result)
-    expect(result.missing_fields).toContain('commission')
-  })
+  it('returns success (not error or partial)', () => expect(result.kind).toBe('success'))
   it('thallu still extracted', () => {
-    assertPartial(result)
+    assertSuccess(result)
     expect(result.fields.thallu).toBe(56_000)
   })
 })

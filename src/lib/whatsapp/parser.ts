@@ -85,7 +85,6 @@ export function parseWhatsAppMessage(rawText: string): WhatsAppParseResult {
 
   // ── Step 6: Classify result ──────────────────────────────────────
   const requiredFields: (keyof ParsedFields)[] = [
-    'commission',
     'stated_member_thallu',
     'stated_payment',
   ]
@@ -139,7 +138,7 @@ function detectEventType(
   const hasMemberThallu = STATED_MEMBER_THALLU_PATTERN.test(normalised)
   const hasPayment = STATED_PAYMENT_PATTERN.test(normalised)
 
-  if (hasThalluAmount && hasCommission && (hasMemberThallu || hasPayment)) {
+  if (hasThalluAmount && (hasMemberThallu || hasPayment)) {
     // Extract thallu to confirm it's > 0
     const thalluMatch = normalised.match(THALLU_PATTERN)
     const thalluStr = extractMoneyFromMatch(thalluMatch)
@@ -147,9 +146,9 @@ function detectEventType(
     if (thalluVal !== undefined && thalluVal > 0) {
       return 'NORMAL'
     }
-    // thallu == 0 with commission present — ambiguous
+    // thallu == 0 — ambiguous
     warnings.push(
-      'thallu appears to be 0 with commission present — event type is ambiguous; ' +
+      'thallu appears to be 0 — event type is ambiguous; ' +
         'defaulting to UNKNOWN. Review manually.',
     )
     return 'UNKNOWN'

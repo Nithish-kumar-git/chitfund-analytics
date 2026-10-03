@@ -55,18 +55,28 @@ describe('Analytics Summary', () => {
   });
 
   describe('computePortfolioSummary', () => {
-    it('aggregates correctly across chits', () => {
+    it('aggregates correctly across chits and ledger entries', () => {
       const chits: Partial<Chit>[] = [
-        { status: 'ACTIVE', face_value: 100000 },
-        { status: 'COMPLETED', face_value: 200000 },
-        { status: 'ACTIVE', face_value: 300000 },
+        { status: 'ACTIVE', face_value: 100000, verified_at: null },
+        { status: 'COMPLETED', face_value: 200000, verified_at: null }, // unverified
+        { status: 'COMPLETED', face_value: 300000, verified_at: '2026-01-01T00:00:00Z' }, // verified
       ];
 
-      const summary = computePortfolioSummary(chits as Chit[]);
+      const ledgerEntries = [
+        { id: '1', entry_type: 'INSTALLMENT_PAID', amount: 10000 },
+        { id: '2', entry_type: 'AUCTION_PAYOUT_RECEIVED', amount: 95000 },
+        { id: '3', entry_type: 'INSTALLMENT_PAID', amount: 5000 },
+        { id: '4', entry_type: 'MANUAL_CORRECTION', amount: 4500, corrects_entry_id: '3' }, // 5000 superseded, 4500 effective
+      ];
+
+      const summary = computePortfolioSummary(chits as Chit[], ledgerEntries);
 
       expect(summary.totalChits).toBe(3);
-      expect(summary.activeChits).toBe(2);
+      expect(summary.activeChits).toBe(1);
       expect(summary.totalFaceValue).toBe(600000);
+      expect(summary.unverifiedChits).toBe(1);
+      expect(summary.totalPaid).toBe(10000 + 4500);
+      expect(summary.totalReceived).toBe(95000);
     });
   });
 });

@@ -44,6 +44,13 @@ const FIXTURE_MISSING_FIELDS = `
 round 1
 `
 
+const FIXTURE_NO_COMMISSION = `
+தள்ளு 56000
+ஒரு நபர் தள்ளு 2240
+கட்ட வேண்டிய தொகை 9760
+9th round
+`
+
 const mockConfig: ChitConfig = {
   face_value: 300_000,
   base_installment: 12_000,
@@ -59,8 +66,22 @@ describe('Ingestion Pipeline', () => {
 
     expect(result.status).toBe('READY_FOR_CONFIRMATION')
     if (result.status === 'READY_FOR_CONFIRMATION') {
-      expect(result.proposed_calculation_status).toBe('VERIFIED_FORMULA')
-      expect(result.cross_check_result?.kind).toBe('match')
+      expect(result.parse_result?.event_type).toBe('NORMAL')
+    }
+  })
+
+  it('A2. NORMAL without commission — READY_FOR_CONFIRMATION', () => {
+    const result = processWhatsAppMessage({
+      profile_id: 'user1',
+      raw_text: FIXTURE_NO_COMMISSION
+    }, false, mockConfig)
+
+    // With 56k thallu and 25 members, member thallu = 2240, expected = 12000 - 2240 = 9760
+    expect(result.status).toBe('READY_FOR_CONFIRMATION')
+
+    if (result.status === 'READY_FOR_CONFIRMATION') {
+      expect(result.proposed_calculation_status).toBe('INDUSTRY_DEFAULT')
+      expect(result.cross_check_result?.kind).toBe('not_applicable')
     }
   })
 

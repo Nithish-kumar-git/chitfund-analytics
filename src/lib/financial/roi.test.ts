@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { computeCompletedRoi } from './roi'
+import { computeCompletedRoi, computeActiveMetrics } from './roi'
 import type { RoiInput, EffectiveLedgerEntry } from './roi'
 
 // ---------------------------------------------------------------------------
@@ -42,6 +42,36 @@ function makeInput(overrides: Partial<RoiInput> = {}): RoiInput {
     ...overrides,
   }
 }
+
+// ---------------------------------------------------------------------------
+// computeActiveMetrics Tests
+// ---------------------------------------------------------------------------
+describe('computeActiveMetrics', () => {
+  it('handles empty ledger correctly', () => {
+    const result = computeActiveMetrics([])
+    expect(result.totalActualPaid).toBe(0)
+    expect(result.totalActualReceived).toBe(0)
+    expect(result.netActualCashFlow).toBe(0)
+  })
+
+  it('computes metrics correctly for mixed effective entries', () => {
+    // 10,000 INSTALLMENT_PAID + 500 LATE_FEE + 50 ADJUSTMENT(outflow) = 10550 paid
+    // 200,000 AUCTION_PAYOUT_RECEIVED + 100 ADJUSTMENT(inflow) = 200100 received
+    // Net = 189550
+    const entries = [
+      makeEntry('1', 'INSTALLMENT_PAID', 10000),
+      makeEntry('2', 'LATE_FEE', 500),
+      makeEntry('3', 'ADJUSTMENT', -50),
+      makeEntry('4', 'AUCTION_PAYOUT_RECEIVED', 200000),
+      makeEntry('5', 'ADJUSTMENT', 100),
+      makeEntry('6', 'INSTALLMENT_PAID', 10000, 'MANUAL_CORRECTION'), // A manual correction replacing a 10,000 payment
+    ]
+    const result = computeActiveMetrics(entries)
+    expect(result.totalActualPaid).toBe(20550)
+    expect(result.totalActualReceived).toBe(200100)
+    expect(result.netActualCashFlow).toBe(200100 - 20550)
+  })
+})
 
 // ---------------------------------------------------------------------------
 // Test 1 — Completed chit with valid actual cash flows → ROI calculated
