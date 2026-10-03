@@ -11,6 +11,8 @@ import { LedgerTable } from '@/components/ledger/ledger-table'
 import type { LedgerRow } from '@/components/ledger/ledger-table'
 import { computeCompletedRoi } from '@/lib/financial/roi'
 import type { RoiInput, EffectiveLedgerEntry } from '@/lib/financial/roi'
+import { RecordCashFlowForm } from '@/components/ledger/record-cash-flow-form'
+import { WinnerConfirmation } from '@/components/auction/winner-confirmation'
 
 function DetailRow({ label, value }: { label: string; value: string | null | undefined }) {
   return (
@@ -151,8 +153,26 @@ export default async function ChitDetailPage({ params }: PageProps) {
       corrects_entry_id: row.corrects_entry_id ?? null,
       is_superseded: isSuperseded,
       effective_entry_type: effectiveType,
+      auction_event_id: row.auction_event_id,
     }
   })
+
+  // Build map of auction_event_id -> ledger entry counts for RecordCashFlowForm
+  const ledgerCountsByEvent = new Map<string, { installments: number; payouts: number }>()
+  ledgerEntries
+    .filter((e) => !e.is_superseded && e.auction_event_id)
+    .forEach((entry) => {
+      const eventId = entry.auction_event_id!
+      if (!ledgerCountsByEvent.has(eventId)) {
+        ledgerCountsByEvent.set(eventId, { installments: 0, payouts: 0 })
+      }
+      const counts = ledgerCountsByEvent.get(eventId)!
+      if (entry.effective_entry_type === 'INSTALLMENT_PAID') {
+        counts.installments++
+      } else if (entry.effective_entry_type === 'AUCTION_PAYOUT_RECEIVED') {
+        counts.payouts++
+      }
+    })
 
   const effectiveEntries: EffectiveLedgerEntry[] = ledgerEntries
     .filter((e) => !e.is_superseded)
@@ -341,52 +361,75 @@ export default async function ChitDetailPage({ params }: PageProps) {
           </div>
         ) : (
           <div className="flex flex-col gap-3">
-            {typedAuctionEvents.map((round) => (
-              <Card key={round.id} className="p-4">
-                <div className="flex flex-wrap items-center justify-between gap-4 mb-3 pb-3 border-b border-[rgba(255,255,255,0.05)]">
-                  <div className="flex items-center gap-3">
-                    <span className="text-sm font-semibold text-[#E2E8F0]">Round {round.round_number}</span>
-                    <StatusBadge status={round.event_type} />
+            {typedAuctionEvents.map((round) => {
+              const eventCounts = ledgerCountsByEvent.get(round.id) ?? { installments: 0, payouts: 0 }
+              
+              return (
+                <Card key={round.id} className="p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-4 mb-3 pb-3 border-b border-[rgba(255,255,255,0.05)]">
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm font-semibold text-[#E2E8F0]">Round {round.round_number}</span>
+                      <StatusBadge status={round.event_type} />
+                    </div>
+                    {round.calculation_status && round.calculation_status !== 'INDUSTRY_DEFAULT' && (
+                      <span className="text-xs text-[#64748B] font-mono">{round.calculation_status}</span>
+                    )}
                   </div>
-                  {round.calculation_status && round.calculation_status !== 'INDUSTRY_DEFAULT' && (
-                    <span className="text-xs text-[#64748B] font-mono">{round.calculation_status}</span>
-                  )}
-                </div>
 
-                {['UNKNOWN', 'FINAL', 'SPECIAL_NO_AUCTION'].includes(round.event_type) ? (
-                  <p className="text-sm text-[#94A3B8]">
-                    Normal auction calculations are not applicable for {round.event_type} events.
-                  </p>
-                ) : (
-                  <dl className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <div>
-                      <dt className="text-xs text-[#64748B] font-mono uppercase tracking-wide">Thallu</dt>
-                      <dd className="text-sm text-[#E2E8F0]">
-                        {round.thallu != null ? `₹${Number(round.thallu).toLocaleString('en-IN')}` : <span className="text-[#334155] italic">—</span>}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="text-xs text-[#64748B] font-mono uppercase tracking-wide">Commission</dt>
-                      <dd className="text-sm text-[#E2E8F0]">
-                        {round.commission != null ? `₹${Number(round.commission).toLocaleString('en-IN')}` : <span className="text-[#334155] italic">—</span>}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="text-xs text-[#64748B] font-mono uppercase tracking-wide">Member Thallu</dt>
-                      <dd className="text-sm text-[#E2E8F0]">
-                        {round.member_thallu != null ? `₹${Number(round.member_thallu).toLocaleString('en-IN')}` : <span className="text-[#334155] italic">—</span>}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="text-xs text-[#64748B] font-mono uppercase tracking-wide">Installment Due</dt>
-                      <dd className="text-sm text-[#4ade80] font-medium">
-                        {round.non_winner_payment != null ? `₹${Number(round.non_winner_payment).toLocaleString('en-IN')}` : <span className="text-[#334155] italic">—</span>}
-                      </dd>
-                    </div>
-                  </dl>
-                )}
-              </Card>
-            ))}
+                  {['UNKNOWN', 'FINAL', 'SPECIAL_NO_AUCTION'].includes(round.event_type) ? (
+                    <p className="text-sm text-[#94A3B8]">
+                      Normal auction calculations are not applicable for {round.event_type} events.
+                    </p>
+                  ) : (
+                    <dl className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                      <div>
+                        <dt className="text-xs text-[#64748B] font-mono uppercase tracking-wide">Thallu</dt>
+                        <dd className="text-sm text-[#E2E8F0]">
+                          {round.thallu != null ? `₹${Number(round.thallu).toLocaleString('en-IN')}` : <span className="text-[#334155] italic">—</span>}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs text-[#64748B] font-mono uppercase tracking-wide">Commission</dt>
+                        <dd className="text-sm text-[#E2E8F0]">
+                          {round.commission != null ? `₹${Number(round.commission).toLocaleString('en-IN')}` : <span className="text-[#334155] italic">—</span>}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs text-[#64748B] font-mono uppercase tracking-wide">Member Thallu</dt>
+                        <dd className="text-sm text-[#E2E8F0]">
+                          {round.member_thallu != null ? `₹${Number(round.member_thallu).toLocaleString('en-IN')}` : <span className="text-[#334155] italic">—</span>}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs text-[#64748B] font-mono uppercase tracking-wide">Installment Due</dt>
+                        <dd className="text-sm text-[#4ade80] font-medium">
+                          {round.non_winner_payment != null ? `₹${Number(round.non_winner_payment).toLocaleString('en-IN')}` : <span className="text-[#334155] italic">—</span>}
+                        </dd>
+                      </div>
+                    </dl>
+                  )}
+
+                  <WinnerConfirmation
+                    chitId={id}
+                    auctionEventId={round.id}
+                    roundNumber={round.round_number}
+                    currentWonByUs={round.won_by_us}
+                  />
+
+                  <RecordCashFlowForm
+                    chitId={id}
+                    auctionEventId={round.id}
+                    roundNumber={round.round_number}
+                    wonByUs={round.won_by_us}
+                    expectedInstallment={round.non_winner_payment ? Number(round.non_winner_payment) : null}
+                    expectedPayout={round.our_payout_amount ? Number(round.our_payout_amount) : null}
+                    existingInstallments={eventCounts.installments}
+                    existingPayouts={eventCounts.payouts}
+                    eventType={round.event_type}
+                  />
+                </Card>
+              )
+            })}
           </div>
         )}
       </div>

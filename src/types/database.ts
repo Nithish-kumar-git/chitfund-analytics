@@ -140,6 +140,10 @@ export interface AuctionEvent {
  * amount sign convention:
  *   negative = outflow (we paid)
  *   positive = inflow (we received)
+ * 
+ * idempotency_key: Phase 8A.1 double-submit protection.
+ *   Client generates UUID on form open, prevents accidental duplicates.
+ *   NULL allowed for backward compatibility.
  */
 export interface LedgerEntry {
   id: string
@@ -151,6 +155,7 @@ export interface LedgerEntry {
   transaction_date: string    // DATE
   corrects_entry_id: string | null
   notes: string | null
+  idempotency_key: string | null  // Phase 8A.1
   created_at: string
   // No updated_at — append-only table
 }

@@ -15,6 +15,7 @@ export interface LedgerRow {
   created_at: string
   // Optional join — present when auction_event_id resolves
   round_number?: number | null
+  auction_event_id?: string | null  // Phase 8A: needed for RecordCashFlowForm
   corrects_entry_id: string | null
   is_superseded: boolean
   effective_entry_type: LedgerEntryType
