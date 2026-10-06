@@ -59,7 +59,7 @@ export type IngestionResult =
 // Confirmation Model
 // ─────────────────────────────────────────────────────────────────
 
-export type CalculationStatus = 'VERIFIED_FORMULA' | 'INDUSTRY_DEFAULT' | 'MANUAL_OVERRIDE' | 'FLAGGED_MISMATCH'
+export type CalculationStatus = 'VERIFIED_FORMULA' | 'INDUSTRY_DEFAULT' | 'MANUAL_OVERRIDE' | 'FLAGGED_MISMATCH' | 'CONFIRM_SOURCE'
 
 export interface ConfirmedAuctionEvent {
   round_number: number
