@@ -3,7 +3,7 @@ import { notFound, redirect } from 'next/navigation'
 import type { Chit, ChitCompany, AuctionEvent } from '@/types/database'
 import { Card } from '@/components/ui/card'
 import Link from 'next/link'
-import { ArrowLeft, Calendar, Users, Layers, Percent, FileText, Pencil, Activity, BookOpen, Printer } from 'lucide-react'
+import { ArrowLeft, Calendar, Users, Layers, Percent, FileText, Pencil, Activity, BookOpen, Printer, ShieldCheck } from 'lucide-react'
 import { computeChitSummary } from '@/lib/analytics/summary'
 import { ChitSummaryCards } from '@/components/analytics/summary-cards'
 import { RoiSummaryCard } from '@/components/analytics/roi-summary'
@@ -254,6 +254,13 @@ export default async function ChitDetailPage({ params }: PageProps) {
             >
               <Printer className="h-3.5 w-3.5" aria-hidden="true" />
               Print Statement
+            </Link>
+            <Link
+              href={`/chits/${typedChit.id}/verify`}
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#1e293b] border border-[rgba(255,255,255,0.1)] px-4 py-2 text-sm font-medium text-[#CBD5E1] hover:bg-[#334155] hover:text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              <ShieldCheck className="h-4 w-4" aria-hidden="true" />
+              Financial Verification
             </Link>
             <Link
               href={`/chits/${typedChit.id}/queue`}
