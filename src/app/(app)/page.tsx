@@ -3,6 +3,7 @@ import { getCompletePortfolioState, type PortfolioState } from '@/lib/analytics/
 import { Card } from '@/components/ui/card'
 import Link from 'next/link'
 import { ExportButton } from '@/components/export-button'
+import { AuditButton } from '@/components/dashboard/audit-button'
 import { BookOpen, TrendingUp, CheckCircle2, AlertTriangle, Layers, IndianRupee, PiggyBank, ArrowRight } from 'lucide-react'
 
 function AttentionRequired({ state }: { state: PortfolioState }) {
@@ -101,6 +102,7 @@ export default async function CommandDashboard() {
         <div className="flex items-center gap-3">
           <Link href="/chits" className="text-sm font-medium text-[#94A3B8] hover:text-[#E2E8F0]">View Chits</Link>
           <Link href="/chits/new" className="text-sm font-medium px-4 py-2 bg-[#1D4ED8] hover:bg-[#1E40AF] text-white rounded-xl transition-colors">Add Chit</Link>
+          <AuditButton />
           <ExportButton />
         </div>
       </header>
