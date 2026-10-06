@@ -407,7 +407,7 @@ export default async function PrintStatementPage({ params }: PageProps) {
               <tr>
                 <th>#</th>
                 <th>Type</th>
-                <th>Date</th>
+                <th>Payment Date</th>
                 <th>Thallu</th>
                 <th>Commission</th>
                 <th>Dividend</th>
@@ -426,7 +426,14 @@ export default async function PrintStatementPage({ params }: PageProps) {
                   <tr key={round.roundNumber}>
                     <td style={{ fontWeight: 600 }}>{round.roundNumber}</td>
                     <td><RoundBadge type={round.eventType} /></td>
-                    <td style={{ whiteSpace: 'nowrap' }}>{fmtDate(round.auctionDate)}</td>
+                    <td style={{ whiteSpace: 'nowrap' }}>
+                      {fmtDate(round.paymentDate)}
+                      {round.auctionDate && (
+                        <div style={{ fontSize: '0.6rem', color: '#94a3b8', marginTop: '0.1rem' }}>
+                          Auction: {fmtDate(round.auctionDate)}
+                        </div>
+                      )}
+                    </td>
                     <td>{isNormal ? fmt(round.thallu) : '\u2014'}</td>
                     <td>{isNormal ? fmt(round.commission) : '\u2014'}</td>
                     <td>{isNormal ? fmt(round.memberThallu) : '\u2014'}</td>

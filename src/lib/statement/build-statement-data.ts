@@ -68,6 +68,7 @@ export interface StatementRound {
   eventType: AuctionEvent['event_type']
   calculationStatus: AuctionEvent['calculation_status']
   auctionDate: string | null
+  paymentDate: string | null
   thallu: number | null
   commission: number | null
   memberThallu: number | null
@@ -196,13 +197,15 @@ export function buildStatementData(input: StatementInput): StatementData {
   const rounds: StatementRound[] = sortedEvents.map((event) => {
     const roundEntries = effectiveByEventId.get(event.id) ?? []
 
-    const actualPaidAmt = roundEntries
-      .filter(
-        (r) =>
-          r.effective_entry_type === 'INSTALLMENT_PAID' ||
-          r.effective_entry_type === 'LATE_FEE'
-      )
-      .reduce((sum, r) => sum + Math.abs(r.amount), 0)
+    const actualPaidEntries = roundEntries.filter(
+      (r) =>
+        r.effective_entry_type === 'INSTALLMENT_PAID' ||
+        r.effective_entry_type === 'LATE_FEE'
+    )
+
+    const actualPaidAmt = actualPaidEntries.reduce((sum, r) => sum + Math.abs(r.amount), 0)
+
+    const paymentDate = actualPaidEntries.length > 0 ? actualPaidEntries[0].transaction_date : null
 
     const actualPayoutAmt = roundEntries
       .filter(
@@ -217,6 +220,7 @@ export function buildStatementData(input: StatementInput): StatementData {
       eventType: event.event_type,
       calculationStatus: event.calculation_status,
       auctionDate: event.auction_date,
+      paymentDate,
       thallu: event.thallu != null ? Number(event.thallu) : null,
       commission: event.commission != null ? Number(event.commission) : null,
       memberThallu: event.member_thallu != null ? Number(event.member_thallu) : null,

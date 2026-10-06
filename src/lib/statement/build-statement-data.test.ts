@@ -1,4 +1,4 @@
-﻿/**
+/**
  * build-statement-data.test.ts
  *
  * Tests for the pure statement data builder.
@@ -153,6 +153,8 @@ describe('buildStatementData — actual vs expected', () => {
     expect(round.actualPaid).toBe(actualLedgerAmount)
     // They must not be equal (confirming we are not using expected as actual)
     expect(round.actualPaid).not.toBe(round.expectedInstallment)
+    // paymentDate must be the transaction_date of the effective entry
+    expect(round.paymentDate).toBe('2026-01-20')
   })
 
   it('actualPaid is null when no ledger entries exist for a round', () => {
@@ -165,6 +167,7 @@ describe('buildStatementData — actual vs expected', () => {
     const result = buildStatementData(input)
     expect(result.rounds[0].actualPaid).toBeNull()
     expect(result.rounds[0].expectedInstallment).toBe(4756.25)
+    expect(result.rounds[0].paymentDate).toBeNull()
   })
 })
 
