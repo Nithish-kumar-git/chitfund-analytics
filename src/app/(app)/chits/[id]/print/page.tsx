@@ -176,7 +176,7 @@ export default async function PrintStatementPage({ params }: PageProps) {
     ledgerRows,
   })
 
-  const { rounds, cashFlow, roiOutcome, activeMetrics, isCashFlowVerified, qualityFlags, generatedAt } = statement
+  const { rounds, cashFlow, roiOutcome, activeMetrics, isCashFlowVerified, qualityFlags, generatedAt, installmentSavings } = statement
   const genDate = fmtDate(generatedAt.split('T')[0])
 
   return (
@@ -369,6 +369,30 @@ export default async function PrintStatementPage({ params }: PageProps) {
           </p>
         )}
 
+        {/* INSTALLMENT SAVINGS */}
+        {installmentSavings && (
+          <>
+            <SectionHeading>Installment Savings</SectionHeading>
+            <p style={{ fontSize: '0.62rem', color: '#64748b', marginBottom: '0.5rem' }}>
+              Amount saved compared with the normal installment.
+            </p>
+            <div className="summary-grid">
+              <dl className="scard">
+                <dt>Normal Installments So Far</dt>
+                <dd>{fmt(installmentSavings.totalNormalInstallments)}</dd>
+              </dl>
+              <dl className="scard">
+                <dt>Actual Installments Paid</dt>
+                <dd>{fmt(installmentSavings.totalActualPaid)}</dd>
+              </dl>
+              <dl className="scard pos">
+                <dt>Total Installment Savings</dt>
+                <dd>{fmt(installmentSavings.totalSaved)}</dd>
+              </dl>
+            </div>
+          </>
+        )}
+
         {/* ROUND STATEMENT */}
         <SectionHeading>Round Statement</SectionHeading>
         <p style={{ fontSize: '0.62rem', color: '#64748b', marginBottom: '0.5rem' }}>
@@ -389,6 +413,7 @@ export default async function PrintStatementPage({ params }: PageProps) {
                 <th>Dividend</th>
                 <th>Installment Due</th>
                 <th>Actual Paid</th>
+                <th>Saved</th>
                 <th>Payout</th>
                 <th>Winner</th>
                 <th>Calc</th>
@@ -408,6 +433,9 @@ export default async function PrintStatementPage({ params }: PageProps) {
                     <td>{isNormal ? fmt(round.expectedInstallment) : '\u2014'}</td>
                     <td style={{ color: round.actualPaid != null ? '#15803d' : '#94a3b8' }}>
                       {round.actualPaid != null ? fmt(round.actualPaid) : '\u2014'}
+                    </td>
+                    <td style={{ color: round.savedThisRound != null ? '#15803d' : '#94a3b8' }}>
+                      {round.savedThisRound != null ? fmt(round.savedThisRound) : '\u2014'}
                     </td>
                     <td style={{ color: round.actualPayout != null ? '#1d4ed8' : '#94a3b8' }}>
                       {round.actualPayout != null ? fmt(round.actualPayout) : '\u2014'}

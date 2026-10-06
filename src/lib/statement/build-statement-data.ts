@@ -1,4 +1,4 @@
-﻿/**
+/**
  * build-statement-data.ts
  *
  * Pure, framework-free function that assembles the data needed to render an
@@ -21,6 +21,7 @@ import {
   type EffectiveLedgerEntry,
   type RoiOutcome,
 } from '@/lib/financial/roi'
+import { computeInstallmentSavings, type InstallmentSavingsMetrics } from '@/lib/financial/savings'
 
 // ---------------------------------------------------------------------------
 // Input types
@@ -76,6 +77,10 @@ export interface StatementRound {
   actualPaid: number | null
   /** Sum of effective AUCTION_PAYOUT_RECEIVED / MATURITY_SETTLEMENT for this round. */
   actualPayout: number | null
+  savedThisRound: number | null
+  cumulativeNormal: number | null
+  cumulativePaid: number | null
+  cumulativeSaved: number | null
   winner: WinnerDisplay
   notes: string | null
 }
@@ -115,6 +120,7 @@ export interface StatementData {
   isCashFlowVerified: boolean
   qualityFlags: DataQualityFlag[]
   generatedAt: string
+  installmentSavings: InstallmentSavingsMetrics | null
 }
 
 // ---------------------------------------------------------------------------
@@ -218,10 +224,29 @@ export function buildStatementData(input: StatementInput): StatementData {
         event.non_winner_payment != null ? Number(event.non_winner_payment) : null,
       actualPaid: actualPaidAmt > 0 ? actualPaidAmt : null,
       actualPayout: actualPayoutAmt > 0 ? actualPayoutAmt : null,
+      savedThisRound: null,
+      cumulativeNormal: null,
+      cumulativePaid: null,
+      cumulativeSaved: null,
       winner: resolveWinner(event),
       notes: event.notes,
     }
   })
+
+  const { metrics: installmentSavings, roundSavingsByNumber } = computeInstallmentSavings(
+    Number(chit.base_installment),
+    rounds.map(r => ({ roundNumber: r.roundNumber, actualPaid: r.actualPaid }))
+  )
+
+  for (const round of rounds) {
+    const savings = roundSavingsByNumber[round.roundNumber]
+    if (savings) {
+      round.savedThisRound = savings.savedThisRound
+      round.cumulativeNormal = savings.cumulativeNormal
+      round.cumulativePaid = savings.cumulativePaid
+      round.cumulativeSaved = savings.cumulativeSaved
+    }
+  }
 
   // Cash-flow rows (all rows, sorted chronologically)
   const cashFlow: StatementCashFlowRow[] = [...ledgerRows]
@@ -302,5 +327,6 @@ export function buildStatementData(input: StatementInput): StatementData {
     isCashFlowVerified,
     qualityFlags,
     generatedAt,
+    installmentSavings,
   }
 }

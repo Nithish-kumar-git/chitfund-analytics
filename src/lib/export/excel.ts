@@ -1,6 +1,7 @@
 import * as XLSX from 'xlsx'
 import type { Chit, AuctionEvent, LedgerEntry } from '@/types/database'
 import { computeActiveMetrics, computeCompletedRoi, type EffectiveLedgerEntry } from '@/lib/financial/roi'
+import { computeInstallmentSavings } from '@/lib/financial/savings'
 
 /**
  * Filters out superseded correction entries from the ledger.
@@ -39,6 +40,28 @@ export function generateExportWorkbook(
   ledgerEntries: LedgerEntry[]
 ): XLSX.WorkBook {
   const wb = XLSX.utils.book_new()
+
+  // Pre-calculate savings per chit so we can use them in both summary and history sheets
+  const chitSavingsMap = new Map()
+  for (const chit of chits) {
+    const chitEvents = auctionEvents.filter(e => e.chit_id === chit.id)
+    const chitLedger = ledgerEntries.filter(e => e.chit_id === chit.id)
+    const effectiveEntries = getEffectiveEntries(chitLedger)
+
+    const { metrics, roundSavingsByNumber } = computeInstallmentSavings(
+      Number(chit.base_installment),
+      chitEvents.map(event => {
+        const roundEntries = effectiveEntries.filter(e =>
+          chitLedger.find(l => l.id === e.id)?.auction_event_id === event.id
+        )
+        const actualInstallment = roundEntries
+          .filter(e => e.effective_entry_type === 'INSTALLMENT_PAID' || e.effective_entry_type === 'LATE_FEE')
+          .reduce((sum, e) => sum + e.amount, 0)
+        return { roundNumber: event.round_number, actualPaid: actualInstallment > 0 ? actualInstallment : null }
+      })
+    )
+    chitSavingsMap.set(chit.id, { metrics, roundSavingsByNumber })
+  }
 
   // ─────────────────────────────────────────────────────────────
   // SHEET 1: Chit Summary
@@ -82,6 +105,8 @@ export function generateExportWorkbook(
       'Total Actual Paid': metrics.totalActualPaid,
       'Total Actual Received': metrics.totalActualReceived,
       'Net Actual Cash Flow': metrics.netActualCashFlow,
+      'Total Normal Installments': chitSavingsMap.get(chit.id)?.metrics?.totalNormalInstallments || '',
+      'Total Installment Savings': chitSavingsMap.get(chit.id)?.metrics?.totalSaved || '',
       'ROI': roiDisplay
     }
   })
@@ -145,6 +170,10 @@ export function generateExportWorkbook(
         'Expected Installment': event.non_winner_payment ?? '',
         'Winner Status': winnerStatus,
         'Actual Installment Recorded': actualInstallment > 0 ? actualInstallment : '',
+        'Saved This Round': chitSavingsMap.get(chit?.id)?.roundSavingsByNumber?.[event.round_number]?.savedThisRound ?? '',
+        'Cumulative Normal': chitSavingsMap.get(chit?.id)?.roundSavingsByNumber?.[event.round_number]?.cumulativeNormal ?? '',
+        'Cumulative Paid': chitSavingsMap.get(chit?.id)?.roundSavingsByNumber?.[event.round_number]?.cumulativePaid ?? '',
+        'Cumulative Saved': chitSavingsMap.get(chit?.id)?.roundSavingsByNumber?.[event.round_number]?.cumulativeSaved ?? '',
         'Actual Payout Recorded': actualPayout > 0 ? actualPayout : '',
         'Calculation Status': event.calculation_status,
         'Source / Notes': event.notes || ''

@@ -44,7 +44,7 @@ function NavLink({ item, onClick }: { item: NavItem; onClick?: () => void }) {
 export function Sidebar() {
   return (
     <aside
-      className="hidden lg:flex flex-col w-56 shrink-0 bg-[#0A1120] border-r border-[rgba(255,255,255,0.06)] h-screen sticky top-0"
+      className="hidden lg:flex flex-col w-56 shrink-0 bg-[#0A1120] border-r border-[rgba(255,255,255,0.06)] h-screen sticky top-0 print:hidden"
       aria-label="Main navigation"
     >
       {/* Brand */}
@@ -87,7 +87,7 @@ export function MobileTopbar() {
 
   return (
     <>
-      <header className="lg:hidden flex items-center justify-between px-4 py-3 bg-[#0A1120] border-b border-[rgba(255,255,255,0.06)] sticky top-0 z-40">
+      <header className="lg:hidden flex items-center justify-between px-4 py-3 bg-[#0A1120] border-b border-[rgba(255,255,255,0.06)] sticky top-0 z-40 print:hidden">
         <span className="text-sm font-semibold text-[#E2E8F0] tracking-tight">
           Chit Fund <span className="text-[10px] font-mono text-[#059669] uppercase tracking-widest">analytics</span>
         </span>

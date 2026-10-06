@@ -13,6 +13,8 @@ import { ExportChitButton } from '@/components/export-chit-button'
 import type { LedgerRow } from '@/components/ledger/ledger-table'
 import { computeCompletedRoi } from '@/lib/financial/roi'
 import type { RoiInput, EffectiveLedgerEntry } from '@/lib/financial/roi'
+import { computeInstallmentSavings } from '@/lib/financial/savings'
+import { InstallmentSavingsCard } from '@/components/analytics/installment-savings-card'
 import { RecordCashFlowForm } from '@/components/ledger/record-cash-flow-form'
 import { WinnerConfirmation } from '@/components/auction/winner-confirmation'
 
@@ -202,6 +204,19 @@ export default async function ChitDetailPage({ params }: PageProps) {
 
   const roiOutcome = computeCompletedRoi(roiInput)
 
+  const { metrics: installmentSavingsMetrics, roundSavingsByNumber } = computeInstallmentSavings(
+    Number(typedChit.base_installment),
+    typedAuctionEvents.map(event => {
+      const actualPaid = effectiveEntries
+        .filter(e =>
+          (e.effective_entry_type === 'INSTALLMENT_PAID' || e.effective_entry_type === 'LATE_FEE') &&
+          (ledgerRaw || []).find((l: any) => l.id === e.id)?.auction_event_id === event.id
+        )
+        .reduce((sum, e) => sum + Math.abs(Number(e.amount)), 0)
+      return { roundNumber: event.round_number, actualPaid: actualPaid > 0 ? actualPaid : null }
+    })
+  )
+
   return (
     <div>
       {/* Back link */}
@@ -346,11 +361,14 @@ export default async function ChitDetailPage({ params }: PageProps) {
         </div>
         <div className="flex flex-col gap-4">
           <ChitSummaryCards summary={chitSummary} />
-          <RoiSummaryCard
-            outcome={roiOutcome}
-            chitId={id}
-            effectiveEntries={effectiveEntries}
-          />
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <InstallmentSavingsCard metrics={installmentSavingsMetrics} />
+            <RoiSummaryCard
+              outcome={roiOutcome}
+              chitId={id}
+              effectiveEntries={effectiveEntries}
+            />
+          </div>
         </div>
       </div>
 
@@ -391,9 +409,10 @@ export default async function ChitDetailPage({ params }: PageProps) {
                       Normal auction calculations are not applicable for {round.event_type} events.
                     </p>
                   ) : (
-                    <dl className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                      <div>
-                        <dt className="text-xs text-[#64748B] font-mono uppercase tracking-wide">Thallu</dt>
+                    <>
+                      <dl className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <div>
+                          <dt className="text-xs text-[#64748B] font-mono uppercase tracking-wide">Thallu</dt>
                         <dd className="text-sm text-[#E2E8F0]">
                           {round.thallu != null ? `₹${Number(round.thallu).toLocaleString('en-IN')}` : <span className="text-[#334155] italic">—</span>}
                         </dd>
@@ -417,6 +436,39 @@ export default async function ChitDetailPage({ params }: PageProps) {
                         </dd>
                       </div>
                     </dl>
+                    <dl className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
+                      <div>
+                        <dt className="text-xs text-[#64748B] font-mono uppercase tracking-wide">Base Installment</dt>
+                        <dd className="text-sm text-[#E2E8F0]">
+                          ₹{Number(typedChit.base_installment).toLocaleString('en-IN')}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs text-[#64748B] font-mono uppercase tracking-wide">Actual Paid</dt>
+                        <dd className="text-sm text-[#4ade80] font-medium">
+                          {roundSavingsByNumber[round.round_number]?.actualPaid != null
+                            ? `₹${roundSavingsByNumber[round.round_number].actualPaid!.toLocaleString('en-IN')}`
+                            : <span className="text-[#334155] italic">—</span>}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs text-[#64748B] font-mono uppercase tracking-wide">Saved This Round</dt>
+                        <dd className="text-sm text-[#15803d] font-bold">
+                          {roundSavingsByNumber[round.round_number]?.savedThisRound != null
+                            ? `₹${roundSavingsByNumber[round.round_number].savedThisRound!.toLocaleString('en-IN')}`
+                            : <span className="text-[#334155] italic">—</span>}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs text-[#64748B] font-mono uppercase tracking-wide">Cumulative Saved</dt>
+                        <dd className="text-sm text-[#15803d] font-bold">
+                          {roundSavingsByNumber[round.round_number]?.cumulativeSaved != null
+                            ? `₹${roundSavingsByNumber[round.round_number].cumulativeSaved!.toLocaleString('en-IN')}`
+                            : <span className="text-[#334155] italic">—</span>}
+                        </dd>
+                      </div>
+                    </dl>
+                    </>
                   )}
 
                   <EventClassification
