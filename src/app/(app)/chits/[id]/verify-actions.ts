@@ -98,6 +98,7 @@ export async function verifyChitCashFlows(data: { chit_id: string }): Promise<Ve
     .from('auction_events')
     .select('id', { count: 'exact', head: true })
     .eq('chit_id', chit_id)
+    .eq('profile_id', user.id)
 
   if (roundError) {
     return { success: false, error: 'Failed to count auction rounds: ' + roundError.message }
@@ -111,21 +112,23 @@ export async function verifyChitCashFlows(data: { chit_id: string }): Promise<Ve
     }
   }
 
-  // 6. Require no unresolved FLAGGED_MISMATCH
-  const { count: flaggedCount, error: flaggedError } = await supabase
+  // 6. Require no unresolved FLAGGED_MISMATCH or INDUSTRY_DEFAULT in NORMAL rounds
+  const { count: unverifiedCount, error: unverifiedError } = await supabase
     .from('auction_events')
     .select('id', { count: 'exact', head: true })
     .eq('chit_id', chit_id)
-    .eq('calculation_status', 'FLAGGED_MISMATCH')
+    .eq('profile_id', user.id)
+    .eq('event_type', 'NORMAL')
+    .in('calculation_status', ['FLAGGED_MISMATCH', 'INDUSTRY_DEFAULT'])
 
-  if (flaggedError) {
-    return { success: false, error: 'Failed to check flagged mismatches: ' + flaggedError.message }
+  if (unverifiedError) {
+    return { success: false, error: 'Failed to check verification blockers: ' + unverifiedError.message }
   }
 
-  if ((flaggedCount ?? 0) > 0) {
+  if ((unverifiedCount ?? 0) > 0) {
     return {
       success: false,
-      error: `${flaggedCount} round(s) have an unresolved flagged mismatch. Resolve them before verifying.`,
+      error: `${unverifiedCount} NORMAL round(s) are not verified. Resolve them before verifying.`,
     }
   }
 
@@ -178,6 +181,61 @@ export async function verifyChitCashFlows(data: { chit_id: string }): Promise<Ve
     }
   }
 
+  revalidatePath(`/chits/${chit_id}`)
+  return { success: true }
+}
+
+const roundActionSchema = z.object({
+  chit_id: z.string().uuid('Invalid chit ID'),
+  auction_event_id: z.string().uuid('Invalid event ID'),
+})
+
+export async function confirmFormula(data: { chit_id: string; auction_event_id: string }): Promise<VerifyResult> {
+  const parsed = roundActionSchema.safeParse(data)
+  if (!parsed.success) return { success: false, error: parsed.error.message }
+  const { chit_id, auction_event_id } = parsed.data
+
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { success: false, error: 'Not authenticated' }
+
+  const { error } = await supabase
+    .from('auction_events')
+    // @ts-ignore - Supabase type inference for Update is resolving to never
+    .update({ calculation_status: 'VERIFIED_FORMULA' })
+    .eq('id', auction_event_id)
+    .eq('chit_id', chit_id)
+    .eq('profile_id', user.id)
+
+  if (error) return { success: false, error: `Failed to confirm formula: ${error.message}` }
+  
+  revalidatePath(`/chits/${chit_id}`)
+  return { success: true }
+}
+
+export async function confirmSource(data: { chit_id: string; auction_event_id: string }): Promise<VerifyResult> {
+  const parsed = roundActionSchema.safeParse(data)
+  if (!parsed.success) return { success: false, error: parsed.error.message }
+  const { chit_id, auction_event_id } = parsed.data
+
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { success: false, error: 'Not authenticated' }
+
+  // Must only apply if currently FLAGGED_MISMATCH? 
+  // Actually it can apply if the user just wants to confirm source. 
+  // We'll just set it. 
+  const { error } = await supabase
+    .from('auction_events')
+    // @ts-ignore
+    .update({ calculation_status: 'CONFIRM_SOURCE' })
+    .eq('id', auction_event_id)
+    .eq('chit_id', chit_id)
+    .eq('profile_id', user.id)
+    .eq('calculation_status', 'FLAGGED_MISMATCH')
+
+  if (error) return { success: false, error: `Failed to confirm source: ${error.message}` }
+  
   revalidatePath(`/chits/${chit_id}`)
   return { success: true }
 }

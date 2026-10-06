@@ -29,6 +29,7 @@ export type CalculationStatus =
   | 'INDUSTRY_DEFAULT'
   | 'MANUAL_OVERRIDE'
   | 'FLAGGED_MISMATCH'
+  | 'CONFIRM_SOURCE'
 
 export type LedgerEntryType =
   | 'INSTALLMENT_PAID'

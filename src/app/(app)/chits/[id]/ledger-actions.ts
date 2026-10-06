@@ -81,6 +81,17 @@ export async function correctLedgerEntry(data: z.infer<typeof correctionSchema>)
     return { success: false, error: `Failed to save correction: ${insertError.message}` }
   }
 
+  // Phase 3: Set calculation_status to MANUAL_OVERRIDE
+  const { error: eventError } = await (supabase as any)
+    .from('auction_events')
+    .update({ calculation_status: 'MANUAL_OVERRIDE' })
+    .eq('id', original.auction_event_id)
+    .eq('profile_id', user.id)
+
+  if (eventError) {
+    return { success: false, error: `Failed to update calculation status: ${eventError.message}` }
+  }
+
   // Phase 7F: Invalidation is handled atomically by the DB trigger
   // trg_ledger_entries_invalidate_verification which fires BEFORE INSERT on
   // ledger_entries. verified_at and verified_by were cleared within the same

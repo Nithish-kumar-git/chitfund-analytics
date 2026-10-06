@@ -117,7 +117,9 @@ describe('verifyChitCashFlows', () => {
         })
         .mockReturnValueOnce({
           select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockResolvedValue({ count: 2, error: null }),
+            eq: vi.fn().mockReturnValue({
+              eq: vi.fn().mockResolvedValue({ count: 2, error: null }),
+            })
           }),
         }),
     }
@@ -130,7 +132,7 @@ describe('verifyChitCashFlows', () => {
     }
   })
 
-  it('rejects when FLAGGED_MISMATCH exists', async () => {
+  it('rejects when unverified NORMAL rounds exist', async () => {
     const mockSupabase: any = {
       auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: USER_ID } } }) },
       from: vi.fn()
@@ -144,14 +146,20 @@ describe('verifyChitCashFlows', () => {
         })
         .mockReturnValueOnce({
           select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockResolvedValue({ count: 3, error: null }),
+            eq: vi.fn().mockReturnValue({
+              eq: vi.fn().mockResolvedValue({ count: 3, error: null }),
+            })
           }),
         })
         .mockReturnValueOnce({
           select: vi.fn().mockReturnValue({
             eq: vi.fn().mockReturnValue({
-              eq: vi.fn().mockResolvedValue({ count: 1, error: null }),
-            }),
+              eq: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  in: vi.fn().mockResolvedValue({ count: 1, error: null }),
+                })
+              })
+            })
           }),
         }),
     }
@@ -160,7 +168,7 @@ describe('verifyChitCashFlows', () => {
     const result = await verifyChitCashFlows({ chit_id: CHIT_ID })
     expect(result.success).toBe(false)
     if (!result.success) {
-      expect(result.error).toMatch(/flagged mismatch/)
+      expect(result.error).toMatch(/NORMAL round\(s\) are not verified/)
     }
   })
 
@@ -196,15 +204,21 @@ describe('verifyChitCashFlows', () => {
         // Call 2: round count
         .mockReturnValueOnce({
           select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockResolvedValue({ count: 3, error: null }),
+            eq: vi.fn().mockReturnValue({
+              eq: vi.fn().mockResolvedValue({ count: 3, error: null }),
+            })
           }),
         })
-        // Call 3: flagged count
+        // Call 3: unverified count
         .mockReturnValueOnce({
           select: vi.fn().mockReturnValue({
             eq: vi.fn().mockReturnValue({
-              eq: vi.fn().mockResolvedValue({ count: 0, error: null }),
-            }),
+              eq: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  in: vi.fn().mockResolvedValue({ count: 0, error: null }),
+                })
+              })
+            })
           }),
         })
         // Call 4: final UPDATE with optimistic lock
@@ -248,14 +262,20 @@ describe('verifyChitCashFlows', () => {
         })
         .mockReturnValueOnce({
           select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockResolvedValue({ count: 3, error: null }),
+            eq: vi.fn().mockReturnValue({
+              eq: vi.fn().mockResolvedValue({ count: 3, error: null }),
+            })
           }),
         })
         .mockReturnValueOnce({
           select: vi.fn().mockReturnValue({
             eq: vi.fn().mockReturnValue({
-              eq: vi.fn().mockResolvedValue({ count: 0, error: null }),
-            }),
+              eq: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  in: vi.fn().mockResolvedValue({ count: 0, error: null }),
+                })
+              })
+            })
           }),
         })
         .mockReturnValueOnce({ update: updateFn }),
@@ -296,14 +316,20 @@ describe('verifyChitCashFlows', () => {
         })
         .mockReturnValueOnce({
           select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockResolvedValue({ count: 3, error: null }),
+            eq: vi.fn().mockReturnValue({
+              eq: vi.fn().mockResolvedValue({ count: 3, error: null }),
+            })
           }),
         })
         .mockReturnValueOnce({
           select: vi.fn().mockReturnValue({
             eq: vi.fn().mockReturnValue({
-              eq: vi.fn().mockResolvedValue({ count: 0, error: null }),
-            }),
+              eq: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  in: vi.fn().mockResolvedValue({ count: 0, error: null }),
+                })
+              })
+            })
           }),
         })
         // ...but the UPDATE WHERE status='COMPLETED' AND updated_at=X matches 0 rows
@@ -344,14 +370,20 @@ describe('verifyChitCashFlows', () => {
         })
         .mockReturnValueOnce({
           select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockResolvedValue({ count: 3, error: null }),
+            eq: vi.fn().mockReturnValue({
+              eq: vi.fn().mockResolvedValue({ count: 3, error: null }),
+            })
           }),
         })
         .mockReturnValueOnce({
           select: vi.fn().mockReturnValue({
             eq: vi.fn().mockReturnValue({
-              eq: vi.fn().mockResolvedValue({ count: 0, error: null }),
-            }),
+              eq: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  in: vi.fn().mockResolvedValue({ count: 0, error: null }),
+                })
+              })
+            })
           }),
         })
         .mockReturnValueOnce({ update: updateFn }),
