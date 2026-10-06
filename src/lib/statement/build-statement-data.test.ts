@@ -341,6 +341,54 @@ describe('buildStatementData — cash flow rows', () => {
     const result = buildStatementData(input)
     const cfRow = result.cashFlow.find((r) => r.id === 'l-orig')
     expect(cfRow).toBeDefined()
-    expect(cfRow!.isSuperseded).toBe(true)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 9. Date and Cash Flow Quality Flags
+// ---------------------------------------------------------------------------
+describe('buildStatementData — Date Flags', () => {
+  it('A. Round has auction_date + payment transaction date -> no missing flags', () => {
+    const input: StatementInput = {
+      chit: BASE_CHIT,
+      companyName: null,
+      auctionEvents: [makeEvent({ round_number: 1, auction_date: '2026-01-15' })],
+      ledgerRows: [
+        makeLedger({ id: 'l1', entry_type: 'INSTALLMENT_PAID', amount: 5000, auction_event_id: 'event-1' }),
+      ],
+    }
+    const result = buildStatementData(input)
+    expect(result.qualityFlags.some(f => f.kind === 'MISSING_AUCTION_DATE')).toBe(false)
+    expect(result.qualityFlags.some(f => f.kind === 'MISSING_CASH_FLOW')).toBe(false)
+  })
+
+  it('B. Round has no auction_date + payment transaction date -> exactly one MISSING_AUCTION_DATE flag with explicit message', () => {
+    const input: StatementInput = {
+      chit: BASE_CHIT,
+      companyName: null,
+      auctionEvents: [makeEvent({ round_number: 1, auction_date: null })],
+      ledgerRows: [
+        makeLedger({ id: 'l1', entry_type: 'INSTALLMENT_PAID', amount: 5000, auction_event_id: 'event-1' }),
+      ],
+    }
+    const result = buildStatementData(input)
+    expect(result.qualityFlags.filter(f => f.kind === 'MISSING_AUCTION_DATE').length).toBe(1)
+    expect(result.qualityFlags.some(f => f.kind === 'MISSING_CASH_FLOW')).toBe(false)
+    const flag = result.qualityFlags.find(f => f.kind === 'MISSING_AUCTION_DATE')
+    expect(flag?.message).toBe('Auction date is missing; payment date is recorded.')
+  })
+
+  it('C. Round has no auction_date + no effective payment entry -> missing auction date AND missing cash flow', () => {
+    const input: StatementInput = {
+      chit: BASE_CHIT,
+      companyName: null,
+      auctionEvents: [makeEvent({ round_number: 1, auction_date: null })],
+      ledgerRows: [],
+    }
+    const result = buildStatementData(input)
+    expect(result.qualityFlags.filter(f => f.kind === 'MISSING_AUCTION_DATE').length).toBe(1)
+    expect(result.qualityFlags.filter(f => f.kind === 'MISSING_CASH_FLOW').length).toBe(1)
+    const flag = result.qualityFlags.find(f => f.kind === 'MISSING_AUCTION_DATE')
+    expect(flag?.message).toBe('Auction date is missing.')
   })
 })

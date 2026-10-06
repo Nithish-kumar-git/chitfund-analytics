@@ -102,7 +102,7 @@ export type DataQualityFlag =
   | { kind: 'FLAGGED_MISMATCH'; round: number; message: string }
   | { kind: 'UNKNOWN_EVENT'; round: number; message: string }
   | { kind: 'MISSING_WINNER'; round: number; message: string }
-  | { kind: 'MISSING_DATE'; round: number; message: string }
+  | { kind: 'MISSING_AUCTION_DATE'; round: number; message: string }
   | { kind: 'MISSING_CASH_FLOW'; round: number; message: string }
 
 export interface StatementData {
@@ -276,7 +276,7 @@ export function buildStatementData(input: StatementInput): StatementData {
   if (chit.status === 'COMPLETED' && !chit.verified_at) {
     qualityFlags.push({
       kind: 'UNVERIFIED_COMPLETED',
-      message: 'Cash flows have not been verified for this completed chit.',
+      message: 'Pending — transactions recorded, but cash-flow verification has not been completed.',
     })
   }
 
@@ -302,15 +302,17 @@ export function buildStatementData(input: StatementInput): StatementData {
         message: 'Winner status is unconfirmed for this NORMAL round.',
       })
     }
+    const roundEffective = effectiveByEventId.get(event.id) ?? []
+    const hasPaymentDate = roundEffective.length > 0
+
     if (!event.auction_date) {
       qualityFlags.push({
-        kind: 'MISSING_DATE',
+        kind: 'MISSING_AUCTION_DATE',
         round: event.round_number,
-        message: 'Auction date is missing.',
+        message: hasPaymentDate ? 'Auction date is missing; payment date is recorded.' : 'Auction date is missing.',
       })
     }
-    const roundEffective = effectiveByEventId.get(event.id) ?? []
-    if (roundEffective.length === 0) {
+    if (!hasPaymentDate) {
       qualityFlags.push({
         kind: 'MISSING_CASH_FLOW',
         round: event.round_number,

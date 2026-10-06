@@ -359,7 +359,7 @@ export default async function PrintStatementPage({ params }: PageProps) {
           </dl>
           <dl className="scard">
             <dt>Verification</dt>
-            <dd>{isCashFlowVerified ? '\u2713 Verified' : 'Unverified'}</dd>
+            <dd>{isCashFlowVerified ? '\u2713 Verified' : 'Cash-flow verification pending'}</dd>
           </dl>
         </div>
 
@@ -407,7 +407,7 @@ export default async function PrintStatementPage({ params }: PageProps) {
               <tr>
                 <th>#</th>
                 <th>Type</th>
-                <th>Payment Date</th>
+                <th>Auction Date</th>
                 <th>Thallu</th>
                 <th>Commission</th>
                 <th>Dividend</th>
@@ -427,10 +427,10 @@ export default async function PrintStatementPage({ params }: PageProps) {
                     <td style={{ fontWeight: 600 }}>{round.roundNumber}</td>
                     <td><RoundBadge type={round.eventType} /></td>
                     <td style={{ whiteSpace: 'nowrap' }}>
-                      {fmtDate(round.paymentDate)}
-                      {round.auctionDate && (
-                        <div style={{ fontSize: '0.6rem', color: '#94a3b8', marginTop: '0.1rem' }}>
-                          Auction: {fmtDate(round.auctionDate)}
+                      {fmtDate(round.auctionDate)}
+                      {round.paymentDate && (
+                        <div style={{ fontSize: '0.6rem', color: '#15803d', marginTop: '0.1rem' }}>
+                          Payment: {fmtDate(round.paymentDate)}
                         </div>
                       )}
                     </td>

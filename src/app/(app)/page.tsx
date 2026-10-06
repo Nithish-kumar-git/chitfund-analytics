@@ -30,13 +30,13 @@ function AttentionRequired({ state }: { state: PortfolioState }) {
     <div className="mb-8 flex flex-col gap-3">
       <h2 className="text-sm font-mono uppercase tracking-wider text-amber-500/80">Attention Required</h2>
       {Object.values(grouped).map(({ chit, flags }) => {
-        const missingDates = flags.filter(f => f.kind === 'MISSING_DATE').length
+        const missingDates = flags.filter(f => f.kind === 'MISSING_AUCTION_DATE').length
         const mismatches = flags.filter(f => f.kind === 'FLAGGED_MISMATCH').length
         const unknowns = flags.filter(f => f.kind === 'UNKNOWN_EVENT').length
         const unverified = flags.some(f => f.kind === 'UNVERIFIED_COMPLETED')
 
         const summaries = []
-        if (missingDates > 0) summaries.push(`${missingDates} missing auction date${missingDates > 1 ? 's' : ''}`)
+        if (missingDates > 0) summaries.push(`${missingDates} auction date${missingDates > 1 ? 's' : ''} missing`)
         if (mismatches > 0) summaries.push(`${mismatches} financial mismatch${mismatches > 1 ? 'es' : ''}`)
         if (unknowns > 0) summaries.push(`${unknowns} unknown event${unknowns > 1 ? 's' : ''}`)
         if (unverified) summaries.push(`Cash-flow verification incomplete`)
