@@ -391,4 +391,15 @@ describe('buildStatementData — Date Flags', () => {
     const flag = result.qualityFlags.find(f => f.kind === 'MISSING_AUCTION_DATE')
     expect(flag?.message).toBe('Auction date is missing.')
   })
+
+  it('D. SPECIAL_NO_AUCTION round with null auction_date -> no MISSING_AUCTION_DATE flag', () => {
+    const input: StatementInput = {
+      chit: BASE_CHIT,
+      companyName: null,
+      auctionEvents: [makeEvent({ round_number: 1, auction_date: null, event_type: 'SPECIAL_NO_AUCTION' })],
+      ledgerRows: [],
+    }
+    const result = buildStatementData(input)
+    expect(result.qualityFlags.some(f => f.kind === 'MISSING_AUCTION_DATE')).toBe(false)
+  })
 })

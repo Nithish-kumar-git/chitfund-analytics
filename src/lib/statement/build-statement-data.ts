@@ -305,7 +305,7 @@ export function buildStatementData(input: StatementInput): StatementData {
     const roundEffective = effectiveByEventId.get(event.id) ?? []
     const hasPaymentDate = roundEffective.length > 0
 
-    if (!event.auction_date) {
+    if (!event.auction_date && event.event_type !== 'SPECIAL_NO_AUCTION') {
       qualityFlags.push({
         kind: 'MISSING_AUCTION_DATE',
         round: event.round_number,

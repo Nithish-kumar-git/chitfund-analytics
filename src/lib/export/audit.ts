@@ -8,11 +8,9 @@ function fmt(n: number | null | undefined): string {
 
 function formatDate(d: string | null | undefined): string {
   if (!d) return 'N/A'
-  return new Date(d).toLocaleDateString('en-IN', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  })
+  const date = new Date(d)
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+  return `${date.getDate()} ${months[date.getMonth()]} ${date.getFullYear()}`
 }
 
 export function generateFinancialAudit(state: PortfolioState): string {
@@ -27,7 +25,22 @@ export function generateFinancialAudit(state: PortfolioState): string {
   out += `Number of Active Chits: ${summary.activeChits}\n`
   out += `Number of Completed Chits: ${summary.completedChits}\n`
   out += `Report Scope: Full Portfolio Snapshot\n`
-  out += `Verification Status: ${summary.unverifiedChits > 0 ? `${summary.unverifiedChits} Completed Chits Unverified` : 'All Completed Chits Verified'}\n`
+  let verificationStatus = ''
+  if (summary.completedChits === 0) {
+    if (summary.activeChits > 0) {
+      verificationStatus = `Pending — ${summary.activeChits} active chits require verification; 0 completed chits.`
+    } else {
+      verificationStatus = 'NO_CHITS'
+    }
+  } else {
+    if (summary.unverifiedChits === 0) {
+      verificationStatus = `All ${summary.completedChits} Completed Chits Verified`
+    } else {
+      verificationStatus = `Pending — ${summary.unverifiedChits} Completed Chits Unverified`
+    }
+  }
+
+  out += `Verification Status: ${verificationStatus}\n`
   out += `Data-Quality Status: ${summary.totalQualityFlags > 0 ? `${summary.totalQualityFlags} Flags Present` : 'Clean'}\n\n`
 
   // 2. PORTFOLIO SUMMARY
@@ -116,7 +129,7 @@ export function generateFinancialAudit(state: PortfolioState): string {
     }
     out += `Note: Only entries where IsSuperseded=false are effective for financial calculations.\n`
     for (const row of data.cashFlow) {
-      out += `Date: ${formatDate(row.date)} | EntryType: ${row.effectiveEntryType} | Round: ${row.roundNumber ?? 'N/A'} | Amount: ${fmt(row.amount)} | IsSuperseded: ${row.isSuperseded} | Notes: ${row.notes || 'None'}\n`
+      out += `Date: ${formatDate(row.date)} | EntryType: ${row.effectiveEntryType} | Round: ${row.roundNumber ?? 'Not linked in ledger'} | Amount: ${fmt(row.amount)} | IsSuperseded: ${row.isSuperseded} | Notes: ${row.notes || 'None'}\n`
     }
   }
   out += '\n'
@@ -148,7 +161,7 @@ export function generateFinancialAudit(state: PortfolioState): string {
 
   // 7. DATA QUALITY
   out += '==================================================\n'
-  out += '7. DATA QUALITY ISSUES\n'
+  out += '7. DATA QUALITY SUMMARY\n'
   out += '==================================================\n'
   const allFlags = chits.flatMap(c => c.qualityFlags.map(f => ({ chitName: c.chit.name, flag: f })))
   
@@ -162,6 +175,16 @@ export function generateFinancialAudit(state: PortfolioState): string {
     'Other': allFlags.filter(f => !['MISSING_AUCTION_DATE', 'MISSING_CASH_FLOW', 'FLAGGED_MISMATCH', 'UNKNOWN_EVENT', 'MISSING_WINNER', 'UNVERIFIED_COMPLETED'].includes(f.flag.kind))
   }
 
+  const manualOverrides = chits.flatMap(c => c.rounds.filter(r => r.calculationStatus === 'MANUAL_OVERRIDE')).length
+
+  out += `- Missing auction dates: ${categories['Missing Auction Dates'].length}\n`
+  out += `- Financial mismatches: ${categories['Financial Mismatches'].length}\n`
+  out += `- Missing cash-flow entries: ${categories['Missing Cash-Flow Entries'].length}\n`
+  out += `- Verification pending: ${categories['Verification Pending'].length}\n`
+  out += `- Unknown events: ${categories['Unknown Events'].length}\n`
+  out += `- Unknown winners: ${categories['Missing Winner Information'].length}\n`
+  out += `- Unknown payouts: 0\n`
+  out += `- Manual overrides: ${manualOverrides}\n`
   let hasAnyQualityIssues = false
   for (const [catName, flags] of Object.entries(categories)) {
     if (flags.length > 0) {
@@ -195,15 +218,31 @@ export function generateFinancialAudit(state: PortfolioState): string {
   out += '9. UNKNOWN / UNRESOLVED\n'
   out += '==================================================\n'
   const unresolvedFlags = allFlags.filter(f => 
-    ['UNKNOWN_EVENT', 'MISSING_WINNER', 'MISSING_AUCTION_DATE', 'FLAGGED_MISMATCH', 'UNVERIFIED_COMPLETED'].includes(f.flag.kind)
+    ['UNKNOWN_EVENT', 'MISSING_WINNER', 'FLAGGED_MISMATCH', 'UNVERIFIED_COMPLETED'].includes(f.flag.kind)
   )
-  if (unresolvedFlags.length === 0) {
-    out += 'No explicit unknown/unresolved items.\n'
-  } else {
+  
+  let hasUnresolved = false
+  if (unresolvedFlags.length > 0) {
+    hasUnresolved = true
     for (const f of unresolvedFlags) {
       const roundText = 'round' in f.flag ? ` (Round ${f.flag.round})` : ''
       out += `- ${f.chitName}${roundText}: [${f.flag.kind}] ${f.flag.message}\n`
     }
+  }
+
+  // Also append manual overrides here
+  for (const c of chits) {
+    const manualRounds = c.rounds.filter(r => r.calculationStatus === 'MANUAL_OVERRIDE')
+    if (manualRounds.length > 0) {
+      hasUnresolved = true
+      for (const r of manualRounds) {
+        out += `- ${c.chit.name} (Round ${r.roundNumber}): [MANUAL_OVERRIDE] Round requires manual review.\n`
+      }
+    }
+  }
+
+  if (!hasUnresolved) {
+    out += 'No explicit unknown/unresolved items.\n'
   }
   out += '\n'
 
@@ -211,7 +250,16 @@ export function generateFinancialAudit(state: PortfolioState): string {
   out += '==================================================\n'
   out += '10. CLAUDE ANALYSIS CONTEXT\n'
   out += '==================================================\n'
-  out += `Analyze this financial dataset without inventing missing values. Treat the CHIT FUND application data as the source of truth. Distinguish expected installments from actual payments. Distinguish auction dates from transaction/payment dates. Do not assume missing values. Clearly identify uncertainties and data-quality issues before making financial recommendations.\n`
-
+  out += `Analyze this financial dataset without inventing missing values. Treat the CHIT FUND application data as the source of truth. Distinguish expected installments from actual payments. Distinguish auction dates from transaction/payment dates. Do not assume missing values. Clearly identify uncertainties and data-quality issues before making financial recommendations.\n\n`
+  out += `FINANCIAL SAFETY NOTES\n`
+  out += `- Active net cash flow is not profit.\n`
+  out += `- Installment savings are not profit.\n`
+  out += `- Expected installments are not actual payments.\n`
+  out += `- Auction dates are not payment dates.\n`
+  out += `- SPECIAL_NO_AUCTION has no auction date by design.\n`
+  out += `- Unverified data must not be treated as confirmed.\n`
+  out += `- FLAGGED_MISMATCH values must not be silently corrected.\n`
+  out += `- Missing values must remain unknown.\n`
+  
   return out
 }

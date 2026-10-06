@@ -273,7 +273,7 @@ export function generateExportWorkbook(
         'Round': event.round_number
       })
     }
-    if (!event.auction_date) {
+    if (!event.auction_date && event.event_type !== 'SPECIAL_NO_AUCTION') {
       qualityData.push({
         'Chit': chitName,
         'Issue Type': 'MISSING_AUCTION_DATE',
