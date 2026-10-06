@@ -31,6 +31,8 @@ function formatReason(reason: RoiUnavailableReason): string {
       return 'Not all expected rounds are recorded.'
     case 'FLAGGED_MISMATCH':
       return 'Some rounds have an unresolved flagged mismatch.'
+    case 'UNVERIFIED_ROUNDS':
+      return 'Some completed rounds are unverified.'
     case 'NO_ENTRIES':
       return 'No actual cash-flow entries found.'
     case 'ZERO_TOTAL_PAID':
@@ -58,9 +60,9 @@ export function RoiSummaryCard({ outcome, chitId, effectiveEntries }: RoiSummary
   // ── Active chit: quiet hint with active cash flow metrics ────────────────
   if (outcome.status === 'UNAVAILABLE') {
     const reasons = outcome.reasons
-    const isActiveOnly = reasons.length === 1 && reasons[0] === 'CHIT_NOT_COMPLETED'
+    const isActive = reasons.includes('CHIT_NOT_COMPLETED')
 
-    if (isActiveOnly) {
+    if (isActive) {
       const activeMetrics = computeActiveMetrics(effectiveEntries)
 
       return (
