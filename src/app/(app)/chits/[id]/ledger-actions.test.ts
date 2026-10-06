@@ -33,7 +33,8 @@ describe('correctLedgerEntry', () => {
       eq: vi.fn().mockReturnThis(),
       single: vi.fn(),
       maybeSingle: vi.fn(),
-      insert: vi.fn()
+      insert: vi.fn(),
+      update: vi.fn().mockReturnThis()
     }
     ;(createClient as any).mockResolvedValue(mockSupabase)
   })
