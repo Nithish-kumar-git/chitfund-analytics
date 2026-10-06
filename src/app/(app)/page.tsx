@@ -5,10 +5,11 @@ import Link from 'next/link'
 import { ExportButton } from '@/components/export-button'
 import { AuditButton } from '@/components/dashboard/audit-button'
 import { BookOpen, TrendingUp, CheckCircle2, AlertTriangle, Layers, IndianRupee, PiggyBank, ArrowRight } from 'lucide-react'
+import { classifyQualityFlag } from '@/lib/analytics/quality-classification'
 
 function AttentionRequired({ state }: { state: PortfolioState }) {
   const flags = state.chits.flatMap(c => 
-    c.qualityFlags.map(f => ({ chit: c.chit, flag: f }))
+    c.qualityFlags.map(f => ({ chit: c.chit, flag: f, severity: classifyQualityFlag(f) }))
   )
 
   if (flags.length === 0) {
@@ -20,46 +21,67 @@ function AttentionRequired({ state }: { state: PortfolioState }) {
     )
   }
 
-  // Group by chit
-  const grouped = flags.reduce((acc, { chit, flag }) => {
-    if (!acc[chit.id]) acc[chit.id] = { chit, flags: [] }
-    acc[chit.id].flags.push(flag)
-    return acc
-  }, {} as Record<string, { chit: any, flags: any[] }>)
+  const criticals = flags.filter(f => f.severity === 'CRITICAL')
+  const verifications = flags.filter(f => f.severity === 'VERIFICATION')
+  const metadatas = flags.filter(f => f.severity === 'METADATA')
+
+  function renderGroup(title: string, items: typeof flags, colorClass: string, bgClass: string, borderClass: string) {
+    if (items.length === 0) return null
+
+    // Group by chit
+    const grouped = items.reduce((acc, { chit, flag }) => {
+      if (!acc[chit.id]) acc[chit.id] = { chit, flags: [] }
+      acc[chit.id].flags.push(flag)
+      return acc
+    }, {} as Record<string, { chit: any, flags: any[] }>)
+
+    return (
+      <div className="mb-6 flex flex-col gap-3">
+        <h3 className={`text-xs font-mono uppercase tracking-wider ${colorClass} opacity-90`}>{title}</h3>
+        {Object.values(grouped).map(({ chit, flags }) => {
+          const mismatches = flags.filter(f => f.kind === 'FLAGGED_MISMATCH').length
+          const unknowns = flags.filter(f => f.kind === 'UNKNOWN_EVENT').length
+          const missingWinners = flags.filter(f => f.kind === 'MISSING_WINNER').length
+          const missingCashFlows = flags.filter(f => f.kind === 'MISSING_CASH_FLOW').length
+          const missingDates = flags.filter(f => f.kind === 'MISSING_AUCTION_DATE').length
+          const unverified = flags.some(f => f.kind === 'UNVERIFIED_COMPLETED')
+
+          const summaries = []
+          if (mismatches > 0) summaries.push(`${mismatches} financial mismatch${mismatches > 1 ? 'es' : ''}`)
+          if (unknowns > 0) summaries.push(`${unknowns} unknown event${unknowns > 1 ? 's' : ''}`)
+          if (missingWinners > 0) summaries.push(`${missingWinners} missing winner${missingWinners > 1 ? 's' : ''}`)
+          if (missingCashFlows > 0) summaries.push(`${missingCashFlows} missing cash flow${missingCashFlows > 1 ? 's' : ''}`)
+          if (unverified) summaries.push(`Cash-flow verification incomplete`)
+          if (missingDates > 0) summaries.push(`${missingDates} auction date${missingDates > 1 ? 's' : ''} missing`)
+
+          return (
+            <Card key={chit.id} className={`p-4 border ${borderClass} ${bgClass} flex items-center justify-between`}>
+              <div className="flex items-center gap-3">
+                <AlertTriangle className={`h-5 w-5 ${colorClass} shrink-0 opacity-90`} />
+                <div>
+                  <p className={`text-sm font-medium ${colorClass}`}>{chit.name}</p>
+                  <p className={`text-xs ${colorClass} opacity-80`}>{summaries.join(' • ')}</p>
+                </div>
+              </div>
+              <Link
+                href={`/chits/${chit.id}`}
+                className={`text-xs font-mono px-3 py-1.5 rounded-md ${borderClass} border bg-black/20 ${colorClass} hover:bg-black/40 transition-colors`}
+              >
+                Review Chit
+              </Link>
+            </Card>
+          )
+        })}
+      </div>
+    )
+  }
 
   return (
-    <div className="mb-8 flex flex-col gap-3">
-      <h2 className="text-sm font-mono uppercase tracking-wider text-amber-500/80">Attention Required</h2>
-      {Object.values(grouped).map(({ chit, flags }) => {
-        const missingDates = flags.filter(f => f.kind === 'MISSING_AUCTION_DATE').length
-        const mismatches = flags.filter(f => f.kind === 'FLAGGED_MISMATCH').length
-        const unknowns = flags.filter(f => f.kind === 'UNKNOWN_EVENT').length
-        const unverified = flags.some(f => f.kind === 'UNVERIFIED_COMPLETED')
-
-        const summaries = []
-        if (missingDates > 0) summaries.push(`${missingDates} auction date${missingDates > 1 ? 's' : ''} missing`)
-        if (mismatches > 0) summaries.push(`${mismatches} financial mismatch${mismatches > 1 ? 'es' : ''}`)
-        if (unknowns > 0) summaries.push(`${unknowns} unknown event${unknowns > 1 ? 's' : ''}`)
-        if (unverified) summaries.push(`Cash-flow verification incomplete`)
-
-        return (
-          <Card key={chit.id} className="p-4 border border-amber-900/30 bg-[#1a1020] flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0" />
-              <div>
-                <p className="text-sm font-medium text-amber-200">{chit.name}</p>
-                <p className="text-xs text-amber-400/80">{summaries.join(' • ')}</p>
-              </div>
-            </div>
-            <Link 
-              href={`/chits/${chit.id}`}
-              className="text-xs font-mono px-3 py-1.5 rounded-md bg-amber-900/30 text-amber-400 hover:bg-amber-900/50 transition-colors"
-            >
-              Review Chit
-            </Link>
-          </Card>
-        )
-      })}
+    <div className="mb-8">
+      <h2 className="text-sm font-mono uppercase tracking-wider text-[#94A3B8] mb-4">Attention Required</h2>
+      {renderGroup('CRITICAL / FINANCIAL REVIEW', criticals, 'text-red-400', 'bg-red-950/20', 'border-red-900/30')}
+      {renderGroup('VERIFICATION PENDING', verifications, 'text-blue-400', 'bg-blue-950/20', 'border-blue-900/30')}
+      {renderGroup('DATA QUALITY', metadatas, 'text-amber-500', 'bg-[#1a1020]', 'border-amber-900/30')}
     </div>
   )
 }
