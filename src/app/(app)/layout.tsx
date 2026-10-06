@@ -9,9 +9,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     error,
   } = await supabase.auth.getUser()
 
-  // Unauthenticated users are sent to the root (login/landing)
+  // Unauthenticated users are sent to the login page
   if (error || !user) {
-    redirect('/')
+    redirect('/login')
   }
 
   return (

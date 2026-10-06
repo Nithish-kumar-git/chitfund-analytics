@@ -17,7 +17,7 @@ export const metadata: Metadata = {
   description: "Private family chit fund tracking and analytics — Phase 1",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html
       lang="en"
