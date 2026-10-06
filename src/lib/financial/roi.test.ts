@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { computeCompletedRoi, computeActiveMetrics } from './roi'
+import { computeCompletedRoi, computeActiveMetrics, computeHasRoiBlockingRound } from './roi'
 import type { RoiInput, EffectiveLedgerEntry } from './roi'
 
 // ---------------------------------------------------------------------------
@@ -37,7 +37,7 @@ function makeInput(overrides: Partial<RoiInput> = {}): RoiInput {
     chit: makeChit('COMPLETED', 3),
     recordedRoundCount: 3,
     effectiveEntries: [],
-    hasFlaggedMismatch: false,
+    hasRoiBlockingRound: false,
     isCashFlowVerified: true,
     ...overrides,
   }
@@ -148,16 +148,60 @@ describe('computeCompletedRoi — Test 4: no entries at all (payout never record
 // ---------------------------------------------------------------------------
 // Test 5 — Completed with FLAGGED_MISMATCH → ROI unavailable
 // ---------------------------------------------------------------------------
-describe('computeCompletedRoi — Test 5: flagged mismatch', () => {
-  it('returns UNAVAILABLE with FLAGGED_MISMATCH reason', () => {
+// ---------------------------------------------------------------------------
+describe('computeCompletedRoi — Test 5: unverified rounds', () => {
+  it('returns UNAVAILABLE with UNVERIFIED_ROUNDS reason', () => {
     const input = makeInput({
       effectiveEntries: [makeEntry('e1', 'INSTALLMENT_PAID', 10060)],
-      hasFlaggedMismatch: true,
+      hasRoiBlockingRound: true,
     })
     const result = computeCompletedRoi(input)
     expect(result.status).toBe('UNAVAILABLE')
     if (result.status !== 'UNAVAILABLE') return
-    expect(result.reasons).toContain('FLAGGED_MISMATCH')
+    expect(result.reasons).toContain('UNVERIFIED_ROUNDS')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Tests for computeHasRoiBlockingRound covering exact blocking rules
+// ---------------------------------------------------------------------------
+describe('computeHasRoiBlockingRound', () => {
+  it('A. COMPLETED + all valid terminal NORMAL rounds → does NOT block (false)', () => {
+    expect(computeHasRoiBlockingRound([
+      { event_type: 'NORMAL', calculation_status: 'VERIFIED_FORMULA' },
+      { event_type: 'NORMAL', calculation_status: 'CONFIRM_SOURCE' },
+      { event_type: 'NORMAL', calculation_status: 'MANUAL_OVERRIDE' },
+    ])).toBe(false)
+  })
+
+  it('B. COMPLETED + NORMAL + INDUSTRY_DEFAULT → BLOCKS (true)', () => {
+    expect(computeHasRoiBlockingRound([
+      { event_type: 'NORMAL', calculation_status: 'INDUSTRY_DEFAULT' },
+    ])).toBe(true)
+  })
+
+  it('C. COMPLETED + NORMAL + FLAGGED_MISMATCH → BLOCKS (true)', () => {
+    expect(computeHasRoiBlockingRound([
+      { event_type: 'NORMAL', calculation_status: 'FLAGGED_MISMATCH' },
+    ])).toBe(true)
+  })
+
+  it('D. COMPLETED + UNKNOWN → BLOCKS (true)', () => {
+    expect(computeHasRoiBlockingRound([
+      { event_type: 'UNKNOWN', calculation_status: 'VERIFIED_FORMULA' },
+    ])).toBe(true)
+  })
+
+  it('E. COMPLETED + SPECIAL_NO_AUCTION + INDUSTRY_DEFAULT → does NOT block (false)', () => {
+    expect(computeHasRoiBlockingRound([
+      { event_type: 'SPECIAL_NO_AUCTION', calculation_status: 'INDUSTRY_DEFAULT' },
+    ])).toBe(false)
+  })
+
+  it('F. COMPLETED + FINAL + INDUSTRY_DEFAULT → does NOT block (false)', () => {
+    expect(computeHasRoiBlockingRound([
+      { event_type: 'FINAL', calculation_status: 'INDUSTRY_DEFAULT' },
+    ])).toBe(false)
   })
 })
 
@@ -429,14 +473,14 @@ describe('computeCompletedRoi — edge cases', () => {
     const input = makeInput({
       chit: makeChit('COMPLETED', 25),
       recordedRoundCount: 20,
-      hasFlaggedMismatch: true,
+      hasRoiBlockingRound: true,
       effectiveEntries: [makeEntry('e1', 'INSTALLMENT_PAID', 10000)],
     })
     const result = computeCompletedRoi(input)
     expect(result.status).toBe('UNAVAILABLE')
     if (result.status !== 'UNAVAILABLE') return
     expect(result.reasons).toContain('ROUNDS_MISSING')
-    expect(result.reasons).toContain('FLAGGED_MISMATCH')
+    expect(result.reasons).toContain('UNVERIFIED_ROUNDS')
   })
 
   it('handles ADJUSTMENT with positive amount as inflow', () => {
@@ -486,7 +530,7 @@ describe('computeCompletedRoi — edge cases', () => {
     const input = makeInput({
       chit: makeChit('ACTIVE', 25),
       recordedRoundCount: 10,
-      hasFlaggedMismatch: true,
+      hasRoiBlockingRound: true,
       effectiveEntries: [makeEntry('e1', 'INSTALLMENT_PAID', 10000)],
     })
     const result = computeCompletedRoi(input)
@@ -494,6 +538,6 @@ describe('computeCompletedRoi — edge cases', () => {
     if (result.status !== 'UNAVAILABLE') return
     expect(result.reasons).toContain('CHIT_NOT_COMPLETED')
     expect(result.reasons).toContain('ROUNDS_MISSING')
-    expect(result.reasons).toContain('FLAGGED_MISMATCH')
+    expect(result.reasons).toContain('UNVERIFIED_ROUNDS')
   })
 })

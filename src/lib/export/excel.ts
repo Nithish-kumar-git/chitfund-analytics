@@ -1,6 +1,6 @@
 import * as XLSX from 'xlsx'
 import type { Chit, AuctionEvent, LedgerEntry } from '@/types/database'
-import { computeActiveMetrics, computeCompletedRoi, type EffectiveLedgerEntry } from '@/lib/financial/roi'
+import { computeActiveMetrics, computeCompletedRoi, computeHasRoiBlockingRound, type EffectiveLedgerEntry } from '@/lib/financial/roi'
 import { computeInstallmentSavings } from '@/lib/financial/savings'
 
 /**
@@ -70,7 +70,7 @@ export function generateExportWorkbook(
     const chitEvents = auctionEvents.filter(e => e.chit_id === chit.id)
     const chitLedger = ledgerEntries.filter(e => e.chit_id === chit.id)
     const effectiveEntries = getEffectiveEntries(chitLedger)
-    const hasFlaggedMismatch = chitEvents.some(e => e.calculation_status === 'FLAGGED_MISMATCH')
+    const hasRoiBlockingRound = computeHasRoiBlockingRound(chitEvents)
     
     // Always calculate basic metrics
     const metrics = computeActiveMetrics(effectiveEntries)
@@ -81,7 +81,7 @@ export function generateExportWorkbook(
         chit: { status: chit.status, duration_months: chit.duration_months },
         recordedRoundCount: chitEvents.length,
         effectiveEntries,
-        hasFlaggedMismatch,
+        hasRoiBlockingRound,
         isCashFlowVerified: chit.verified_at !== null
       })
       if (roi.status === 'AVAILABLE') {

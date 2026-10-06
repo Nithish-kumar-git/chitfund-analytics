@@ -60,10 +60,11 @@ export interface RoiInput {
    */
   effectiveEntries: EffectiveLedgerEntry[]
   /**
-   * True if any effective (non-superseded) ledger entry has
-   * calculation_status = 'FLAGGED_MISMATCH'.
+   * True if any auction round has an unresolved calculation mismatch,
+   * or if any NORMAL round is left as an unverified INDUSTRY_DEFAULT,
+   * or if any round is UNKNOWN.
    */
-  hasFlaggedMismatch: boolean
+  hasRoiBlockingRound: boolean
   /**
    * True if the user has explicitly verified that all actual cash flows
    * (installments and payouts) have been fully recorded. The system cannot
@@ -80,6 +81,7 @@ export type RoiUnavailableReason =
   | 'CHIT_NOT_COMPLETED'
   | 'ROUNDS_MISSING'
   | 'FLAGGED_MISMATCH'
+  | 'UNVERIFIED_ROUNDS'
   | 'NO_ENTRIES'
   | 'ZERO_TOTAL_PAID'
   | 'DATA_COMPLETENESS_UNVERIFIED'
@@ -105,6 +107,26 @@ export interface RoiResult {
 }
 
 export type RoiOutcome = RoiResult | RoiUnavailable
+
+/**
+ * Determines whether any auction round blocks ROI computation due to being
+ * unverified or mismatched.
+ *
+ * ROI is blocked if ANY round is:
+ * - 'UNKNOWN' event type
+ * - 'FLAGGED_MISMATCH' calculation status
+ * - 'NORMAL' event type AND 'INDUSTRY_DEFAULT' calculation status
+ */
+export function computeHasRoiBlockingRound(
+  auctionEvents: { event_type: string; calculation_status: string | null }[]
+): boolean {
+  return auctionEvents.some(
+    (e) =>
+      e.calculation_status === 'FLAGGED_MISMATCH' ||
+      e.event_type === 'UNKNOWN' ||
+      (e.event_type === 'NORMAL' && e.calculation_status === 'INDUSTRY_DEFAULT')
+  )
+}
 
 // ---------------------------------------------------------------------------
 // Direction helpers — entry_type to outflow/inflow classification
@@ -169,9 +191,9 @@ export function computeCompletedRoi(input: RoiInput): RoiOutcome {
     reasons.push('ROUNDS_MISSING')
   }
 
-  // Prerequisite 3: no unresolved FLAGGED_MISMATCH entries
-  if (input.hasFlaggedMismatch) {
-    reasons.push('FLAGGED_MISMATCH')
+  // Prerequisite 3: no unresolved FLAGGED_MISMATCH or unverified NORMAL rounds
+  if (input.hasRoiBlockingRound) {
+    reasons.push('UNVERIFIED_ROUNDS')
   }
 
   // Prerequisite 4: at least one effective entry must exist (data completeness)

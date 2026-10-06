@@ -117,7 +117,7 @@ describe('buildStatementData — ROI', () => {
     const result = buildStatementData(input)
     expect(result.roiOutcome.status).toBe('UNAVAILABLE')
     if (result.roiOutcome.status === 'UNAVAILABLE') {
-      expect(result.roiOutcome.reasons).toContain('FLAGGED_MISMATCH')
+      expect(result.roiOutcome.reasons).toContain('UNVERIFIED_ROUNDS')
     }
   })
 })

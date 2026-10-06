@@ -18,6 +18,7 @@ import type { Chit, AuctionEvent, LedgerEntryType } from '@/types/database'
 import {
   computeCompletedRoi,
   computeActiveMetrics,
+  computeHasRoiBlockingRound,
   type EffectiveLedgerEntry,
   type RoiOutcome,
 } from '@/lib/financial/roi'
@@ -117,7 +118,7 @@ export interface StatementData {
     totalActualReceived: number
     netActualCashFlow: number
   }
-  hasFlaggedMismatch: boolean
+  hasRoiBlockingRound: boolean
   isCashFlowVerified: boolean
   qualityFlags: DataQualityFlag[]
   generatedAt: string
@@ -165,16 +166,14 @@ export function buildStatementData(input: StatementInput): StatementData {
       transaction_date: r.transaction_date,
     }))
 
-  const hasFlaggedMismatch = auctionEvents.some(
-    (e) => e.calculation_status === 'FLAGGED_MISMATCH'
-  )
+  const hasRoiBlockingRound = computeHasRoiBlockingRound(auctionEvents)
   const isCashFlowVerified = chit.verified_at !== null && chit.verified_by !== null
 
   const roiOutcome = computeCompletedRoi({
     chit: { status: chit.status, duration_months: chit.duration_months },
     recordedRoundCount: auctionEvents.length,
     effectiveEntries,
-    hasFlaggedMismatch,
+    hasRoiBlockingRound,
     isCashFlowVerified,
   })
 
@@ -329,7 +328,7 @@ export function buildStatementData(input: StatementInput): StatementData {
     effectiveEntries,
     roiOutcome,
     activeMetrics,
-    hasFlaggedMismatch,
+    hasRoiBlockingRound,
     isCashFlowVerified,
     qualityFlags,
     generatedAt,

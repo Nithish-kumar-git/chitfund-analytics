@@ -11,7 +11,7 @@ import { LedgerTable } from '@/components/ledger/ledger-table'
 import { EventClassification } from '@/components/auction/event-classification'
 import { ExportChitButton } from '@/components/export-chit-button'
 import type { LedgerRow } from '@/components/ledger/ledger-table'
-import { computeCompletedRoi } from '@/lib/financial/roi'
+import { computeCompletedRoi, computeHasRoiBlockingRound } from '@/lib/financial/roi'
 import type { RoiInput, EffectiveLedgerEntry } from '@/lib/financial/roi'
 import { computeInstallmentSavings } from '@/lib/financial/savings'
 import { InstallmentSavingsCard } from '@/components/analytics/installment-savings-card'
@@ -188,15 +188,13 @@ export default async function ChitDetailPage({ params }: PageProps) {
       transaction_date: e.transaction_date,
     }))
 
-  const hasFlaggedMismatch = typedAuctionEvents.some(
-    (event) => event.calculation_status === 'FLAGGED_MISMATCH'
-  )
+  const hasRoiBlockingRound = computeHasRoiBlockingRound(typedAuctionEvents)
 
   const roiInput: RoiInput = {
     chit: { status: typedChit.status, duration_months: typedChit.duration_months },
     recordedRoundCount: typedAuctionEvents.length,
     effectiveEntries,
-    hasFlaggedMismatch,
+    hasRoiBlockingRound,
     // Phase 7F: Both fields must be populated (not null) for the chit to be verified.
     // verified_by being present ensures the verifier identity is known.
     isCashFlowVerified: typedChit.verified_at !== null && typedChit.verified_by !== null,

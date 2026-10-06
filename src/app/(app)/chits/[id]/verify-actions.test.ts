@@ -416,7 +416,7 @@ describe('ROI engine — Phase 7F verification gating', () => {
         { id: 'e1', entry_type: 'INSTALLMENT_PAID', effective_entry_type: 'INSTALLMENT_PAID', amount: 10000, transaction_date: '2026-01-01' },
         { id: 'e2', entry_type: 'AUCTION_PAYOUT_RECEIVED', effective_entry_type: 'AUCTION_PAYOUT_RECEIVED', amount: 244000, transaction_date: '2026-02-01' },
       ],
-      hasFlaggedMismatch: false,
+      hasRoiBlockingRound: false,
       isCashFlowVerified: true,
     })
     expect(result.status).toBe('AVAILABLE')
@@ -431,7 +431,7 @@ describe('ROI engine — Phase 7F verification gating', () => {
         { id: 'e1', entry_type: 'INSTALLMENT_PAID', effective_entry_type: 'INSTALLMENT_PAID', amount: 10000, transaction_date: '2026-01-01' },
         { id: 'e2', entry_type: 'AUCTION_PAYOUT_RECEIVED', effective_entry_type: 'AUCTION_PAYOUT_RECEIVED', amount: 244000, transaction_date: '2026-02-01' },
       ],
-      hasFlaggedMismatch: false,
+      hasRoiBlockingRound: false,
       isCashFlowVerified: false,
     })
     expect(result.status).toBe('UNAVAILABLE')
@@ -450,7 +450,7 @@ describe('ROI engine — Phase 7F verification gating', () => {
         { id: 'corr-1', entry_type: 'MANUAL_CORRECTION', effective_entry_type: 'INSTALLMENT_PAID', amount: 9500, transaction_date: '2026-01-01' },
         { id: 'e2', entry_type: 'AUCTION_PAYOUT_RECEIVED', effective_entry_type: 'AUCTION_PAYOUT_RECEIVED', amount: 244000, transaction_date: '2026-02-01' },
       ],
-      hasFlaggedMismatch: false,
+      hasRoiBlockingRound: false,
       isCashFlowVerified: false, // cleared atomically by trg_ledger_entries_invalidate_verification
     })
     expect(result.status).toBe('UNAVAILABLE')
@@ -470,7 +470,7 @@ describe('ROI engine — Phase 7F verification gating', () => {
         { id: 'e3', entry_type: 'INSTALLMENT_PAID', effective_entry_type: 'INSTALLMENT_PAID', amount: 10000, transaction_date: '2026-03-01' },
         { id: 'e4', entry_type: 'AUCTION_PAYOUT_RECEIVED', effective_entry_type: 'AUCTION_PAYOUT_RECEIVED', amount: 244000, transaction_date: '2026-02-01' },
       ],
-      hasFlaggedMismatch: false,
+      hasRoiBlockingRound: false,
       isCashFlowVerified: false, // cleared atomically by trg_auction_events_invalidate_verification
     })
     expect(result.status).toBe('UNAVAILABLE')
@@ -488,7 +488,7 @@ describe('ROI engine — Phase 7F verification gating', () => {
       effectiveEntries: [
         { id: 'e1', entry_type: 'INSTALLMENT_PAID', effective_entry_type: 'INSTALLMENT_PAID', amount: 10000, transaction_date: '2026-01-01' },
       ],
-      hasFlaggedMismatch: false,
+      hasRoiBlockingRound: false,
       isCashFlowVerified: false,
     })
     expect(result.status).toBe('UNAVAILABLE')
@@ -506,7 +506,7 @@ describe('ROI engine — Phase 7F verification gating', () => {
         { id: 'corr-1', entry_type: 'MANUAL_CORRECTION', effective_entry_type: 'INSTALLMENT_PAID', amount: 9500, transaction_date: '2026-01-01' },
         { id: 'e2', entry_type: 'AUCTION_PAYOUT_RECEIVED', effective_entry_type: 'AUCTION_PAYOUT_RECEIVED', amount: 244000, transaction_date: '2026-02-01' },
       ],
-      hasFlaggedMismatch: false,
+      hasRoiBlockingRound: false,
       isCashFlowVerified: true, // user re-verified after correction
     })
     expect(result.status).toBe('AVAILABLE')
@@ -527,7 +527,7 @@ describe('ROI engine — Phase 7F verification gating', () => {
         { id: 'e3', entry_type: 'INSTALLMENT_PAID', effective_entry_type: 'INSTALLMENT_PAID', amount: 10060, transaction_date: '2026-03-01' },
         { id: 'e4', entry_type: 'AUCTION_PAYOUT_RECEIVED', effective_entry_type: 'AUCTION_PAYOUT_RECEIVED', amount: 244000, transaction_date: '2026-02-01' },
       ],
-      hasFlaggedMismatch: false,
+      hasRoiBlockingRound: false,
       isCashFlowVerified: true,
     })
     expect(result.status).toBe('AVAILABLE')
