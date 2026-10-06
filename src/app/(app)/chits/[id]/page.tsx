@@ -397,12 +397,38 @@ export default async function ChitDetailPage({ params }: PageProps) {
             {typedAuctionEvents.map((round) => {
               const eventCounts = ledgerCountsByEvent.get(round.id) ?? { installments: 0, payouts: 0 }
               
+              const roundEntries = effectiveEntries.filter((e) => 
+                (ledgerRaw || []).find((l: any) => l.id === e.id)?.auction_event_id === round.id
+              )
+
+              const actualPaidEntries = roundEntries.filter(
+                (e) => e.effective_entry_type === 'INSTALLMENT_PAID' || e.effective_entry_type === 'LATE_FEE'
+              )
+              
+              const paymentDate = actualPaidEntries.length > 0 ? actualPaidEntries[0].transaction_date : null
+
+              const actualPayoutAmt = roundEntries
+                .filter((e) => e.effective_entry_type === 'AUCTION_PAYOUT_RECEIVED' || e.effective_entry_type === 'MATURITY_SETTLEMENT')
+                .reduce((sum, e) => sum + Math.abs(Number(e.amount)), 0)
+
               return (
                 <Card key={round.id} className="p-4">
                   <div className="flex flex-wrap items-center justify-between gap-4 mb-3 pb-3 border-b border-[rgba(255,255,255,0.05)]">
-                    <div className="flex items-center gap-3">
-                      <span className="text-sm font-semibold text-[#E2E8F0]">Round {round.round_number}</span>
-                      <StatusBadge status={round.event_type} />
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center gap-3">
+                        <span className="text-sm font-semibold text-[#E2E8F0]">Round {round.round_number}</span>
+                        <StatusBadge status={round.event_type} />
+                      </div>
+                      <div className="text-xs text-[#94A3B8]">
+                        <span className="font-mono uppercase tracking-widest text-[#64748B] mr-2">Auction Date</span>
+                        {round.auction_date ? new Date(round.auction_date).toLocaleDateString('en-IN', { year: 'numeric', month: 'short', day: 'numeric' }) : '—'}
+                        {paymentDate && (
+                          <span className="ml-4 text-[#4ade80]">
+                            <span className="font-mono uppercase tracking-widest text-[#64748B] mr-2">Payment</span>
+                            {new Date(paymentDate).toLocaleDateString('en-IN', { year: 'numeric', month: 'short', day: 'numeric' })}
+                          </span>
+                        )}
+                      </div>
                     </div>
                     {round.calculation_status && round.calculation_status !== 'INDUSTRY_DEFAULT' && (
                       <span className="text-xs text-[#64748B] font-mono">{round.calculation_status}</span>
@@ -429,7 +455,7 @@ export default async function ChitDetailPage({ params }: PageProps) {
                         </dd>
                       </div>
                       <div>
-                        <dt className="text-xs text-[#64748B] font-mono uppercase tracking-wide">Member Thallu</dt>
+                        <dt className="text-xs text-[#64748B] font-mono uppercase tracking-wide">Dividend</dt>
                         <dd className="text-sm text-[#E2E8F0]">
                           {round.member_thallu != null ? `₹${Number(round.member_thallu).toLocaleString('en-IN')}` : <span className="text-[#334155] italic">—</span>}
                         </dd>
@@ -441,7 +467,7 @@ export default async function ChitDetailPage({ params }: PageProps) {
                         </dd>
                       </div>
                     </dl>
-                    <dl className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
+                    <dl className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mt-4">
                       <div>
                         <dt className="text-xs text-[#64748B] font-mono uppercase tracking-wide">Base Installment</dt>
                         <dd className="text-sm text-[#E2E8F0]">
@@ -469,6 +495,14 @@ export default async function ChitDetailPage({ params }: PageProps) {
                         <dd className="text-sm text-[#15803d] font-bold">
                           {roundSavingsByNumber[round.round_number]?.cumulativeSaved != null
                             ? `₹${roundSavingsByNumber[round.round_number].cumulativeSaved!.toLocaleString('en-IN')}`
+                            : <span className="text-[#334155] italic">—</span>}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs text-[#64748B] font-mono uppercase tracking-wide">Actual Payout</dt>
+                        <dd className="text-sm text-[#3b82f6] font-bold">
+                          {actualPayoutAmt > 0
+                            ? `₹${actualPayoutAmt.toLocaleString('en-IN')}`
                             : <span className="text-[#334155] italic">—</span>}
                         </dd>
                       </div>
