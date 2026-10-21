@@ -6,6 +6,8 @@ export { parseWhatsAppMessage } from './parser'
 export { crossCheckWithCalculation } from './crosscheck'
 export { contentHash, isSameContent } from './hash'
 export { normaliseMessage, parseMoneyString } from './normalize'
+export { extractSourceEventDate } from './date'
+export type { SourceEventDate } from './date'
 export type {
   WhatsAppParseResult,
   ParseSuccess,

@@ -118,7 +118,39 @@ describe('correctLedgerEntry', () => {
       corrects_entry_id: ENTRY_ID,
       notes: 'Typo correction'
     })
+    expect(mockSupabase.update).not.toHaveBeenCalled()
     expect(revalidatePath).toHaveBeenCalledWith(`/chits/${CHIT_ID}`)
+  })
+
+  it('maps a concurrent unique-index conflict to already corrected', async () => {
+    mockSupabase.single.mockResolvedValueOnce({
+      data: {
+        id: ENTRY_ID,
+        profile_id: 'user-1',
+        chit_id: CHIT_ID,
+        auction_event_id: 'auction-123',
+        entry_type: 'INSTALLMENT_PAID',
+        amount: 200,
+        transaction_date: '2026-10-01',
+      },
+      error: null,
+    })
+    mockSupabase.maybeSingle.mockResolvedValueOnce({ data: null })
+    mockSupabase.insert.mockResolvedValueOnce({
+      error: {
+        code: '23505',
+        message: 'duplicate key value violates unique constraint "ledger_entries_one_correction_per_original_uk"',
+      },
+    })
+
+    const res = await correctLedgerEntry({
+      chit_id: CHIT_ID,
+      original_entry_id: ENTRY_ID,
+      new_amount: 150,
+    })
+
+    expect(res).toEqual({ success: false, error: 'Entry has already been corrected' })
+    expect(revalidatePath).not.toHaveBeenCalled()
   })
 
   it('rejects a second correction of the same original entry', async () => {

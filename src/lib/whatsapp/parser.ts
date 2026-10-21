@@ -11,6 +11,7 @@
 
 import { normaliseMessage, parseMoneyString } from './normalize'
 import { contentHash } from './hash'
+import { extractSourceEventDate } from './date'
 import {
   CHIT_RECOGNITION_PATTERNS,
   THALLU_ABSENT_PATTERN,
@@ -265,6 +266,11 @@ function extractMetadata(
   warnings: string[],
 ): ParsedMetadata {
   const metadata: ParsedMetadata = {}
+
+  const sourceDate = extractSourceEventDate(normalised)
+  if (sourceDate) {
+    metadata.event_date_raw = sourceDate.raw
+  }
 
   // Round number — only when pattern is explicit
   const roundMatch = normalised.match(ROUND_NUMBER_PATTERN)

@@ -4,10 +4,10 @@ import { createClient } from '@/lib/supabase/server'
 import { processWhatsAppMessage, type ChitConfig } from '@/lib/ingestion/ingest'
 import { persistConfirmedIngestion } from '@/lib/ingestion/persistence'
 import type { IngestionResult, ConfirmedIngestion } from '@/lib/ingestion/types'
-import { contentHash, normaliseMessage } from '@/lib/whatsapp'
+import { contentHash, extractSourceEventDate, normaliseMessage } from '@/lib/whatsapp'
 import { revalidatePath } from 'next/cache'
-// Phase 7F: Verification invalidation on auction_event and ledger_entry INSERT
-// is handled atomically by DB triggers (migration 20261003000002_*).
+// Verification invalidation on auction-event mutations and ledger inserts is
+// handled atomically by database triggers.
 // No application-layer clearCashFlowVerification call is needed here.
 
 export async function addToQueue(chitId: string, rawText: string) {
@@ -132,7 +132,7 @@ export async function confirmFromQueue(
     // 2. Fetch chit config
     const { data: chit, error: chitError } = await supabase
       .from('chits')
-      .select('face_value, base_installment, member_count')
+      .select('face_value, base_installment, member_count, duration_months')
       .eq('id', chitId)
       .single() as any
 
@@ -170,6 +170,13 @@ export async function confirmFromQueue(
       return { success: false, error: 'Round number is required' }
     }
 
+    if (roundNumber > Number(chit.duration_months)) {
+      return {
+        success: false,
+        error: `Round ${roundNumber} is outside the valid range 1..${chit.duration_months}.`,
+      }
+    }
+
     // 4. Duplicate round detection
     const { data: existingRound, error: existingRoundError } = await supabase
       .from('auction_events')
@@ -185,6 +192,7 @@ export async function confirmFromQueue(
     // 5. Setup payload
     const eventType = validResult.parse_result.event_type || 'UNKNOWN'
     const parsedFields = validResult.parse_result.fields
+    const sourceDate = extractSourceEventDate(validResult.input.raw_text)
 
     // Detect explicit winner from parser — never invent.
     const wonByUs = parsedFields?.won_by_us === true ? true : null
@@ -213,33 +221,15 @@ export async function confirmFromQueue(
         calculation_status: validResult.status === 'NEEDS_REVIEW'
             ? (validResult.proposed_calculation_status === 'FLAGGED_MISMATCH' ? 'FLAGGED_MISMATCH' : 'MANUAL_OVERRIDE')
             : (validResult.proposed_calculation_status || 'INDUSTRY_DEFAULT'),
-        auction_date: new Date(),
+        auction_date: sourceDate?.isoDate ?? null,
+        notes: sourceDate && !sourceDate.isoDate
+          ? `Source date "${sourceDate.raw}" is incomplete or invalid; auction date remains unknown.`
+          : undefined,
       },
     }
 
-    // Build ledger entries. Winner round: INSTALLMENT_PAID + AUCTION_PAYOUT_RECEIVED.
-    // Non-winner: INSTALLMENT_PAID only. No entry if stated_payment absent.
-    const ledgerEntries: ConfirmedIngestion['ledger_entries'] = []
-
-    if (parsedFields?.stated_payment) {
-      ledgerEntries.push({
-        entry_type: 'INSTALLMENT_PAID',
-        amount: parsedFields.stated_payment,
-        transaction_date: new Date(),
-      })
-    }
-
-    if (wonByUs && parsedFields?.our_payout_amount) {
-      ledgerEntries.push({
-        entry_type: 'AUCTION_PAYOUT_RECEIVED',
-        amount: parsedFields.our_payout_amount,
-        transaction_date: new Date(),
-      })
-    }
-
-    confirmed.ledger_entries = ledgerEntries.length > 0 ? ledgerEntries : undefined
-
-    // 6. Persist with existing logic
+    // 6. Persist source + auction atomically. Actual cash flows are recorded
+    // only through the explicit installment/payout actions.
     const persistResult = await persistConfirmedIngestion(supabase, confirmed)
     if (!persistResult.success) {
       return { success: false, error: persistResult.error }

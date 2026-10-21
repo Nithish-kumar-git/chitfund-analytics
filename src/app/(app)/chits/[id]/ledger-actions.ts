@@ -3,9 +3,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
-// Phase 7F: Verification invalidation on ledger_entry INSERT is handled
-// atomically by the DB trigger trg_ledger_entries_invalidate_verification
-// (migration 20261003000002_verification_invalidation_triggers.sql).
+// Verification invalidation on ledger_entry INSERT is handled atomically by
+// the database trigger trg_ledger_entries_invalidate_verification.
 // No application-layer clearCashFlowVerification call is needed here.
 
 const correctionSchema = z.object({
@@ -78,24 +77,18 @@ export async function correctLedgerEntry(data: z.infer<typeof correctionSchema>)
     })
 
   if (insertError) {
+    const errorText = `${insertError.message || ''} ${insertError.details || ''}`
+    if (
+      insertError.code === '23505'
+      && errorText.includes('ledger_entries_one_correction_per_original_uk')
+    ) {
+      return { success: false, error: 'Entry has already been corrected' }
+    }
     return { success: false, error: `Failed to save correction: ${insertError.message}` }
   }
 
-  // Phase 3: Set calculation_status to MANUAL_OVERRIDE
-  const { error: eventError } = await (supabase as any)
-    .from('auction_events')
-    .update({ calculation_status: 'MANUAL_OVERRIDE' })
-    .eq('id', original.auction_event_id)
-    .eq('profile_id', user.id)
-
-  if (eventError) {
-    return { success: false, error: `Failed to update calculation status: ${eventError.message}` }
-  }
-
-  // Phase 7F: Invalidation is handled atomically by the DB trigger
-  // trg_ledger_entries_invalidate_verification which fires BEFORE INSERT on
-  // ledger_entries. verified_at and verified_by were cleared within the same
-  // Postgres transaction that committed the correction above.
+  // Database triggers set the linked event to MANUAL_OVERRIDE and invalidate
+  // verification in the same transaction as the correction INSERT.
 
   revalidatePath(`/chits/${chit_id}`)
   return { success: true }

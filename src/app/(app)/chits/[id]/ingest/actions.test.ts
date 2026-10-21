@@ -46,7 +46,7 @@ vi.mock('next/cache', () => ({
 const REAL_UUID = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'
 const USER_ID   = 'user-uuid-0001'
 
-const VALID_CHIT = { face_value: 100000, base_installment: 5000, member_count: 20 }
+const VALID_CHIT = { face_value: 100000, base_installment: 5000, member_count: 20, duration_months: 20 }
 
 const NORMAL_MSG = `1L சீட்டு
 5வது மாதம்
@@ -308,6 +308,57 @@ describe('Ingestion Server Actions — Phase 4B routing fix', () => {
       const result = await confirmIngestion(REAL_UUID, NORMAL_MSG, 5)
       expect(result.success).toBe(false)
       expect(result.error).toMatch(/Round 5 already exists/)
+      expect(persistConfirmedIngestion).not.toHaveBeenCalled()
+    })
+
+    it('stores a due amount only as the expected event amount', async () => {
+      mockSingle.mockResolvedValueOnce({ data: VALID_CHIT })
+      mockSingle.mockResolvedValueOnce({ data: null })
+      mockSingle.mockResolvedValueOnce({ data: null })
+      vi.mocked(persistConfirmedIngestion).mockResolvedValueOnce({ success: true })
+
+      const result = await confirmIngestion(REAL_UUID, NORMAL_MSG, 5)
+
+      expect(result.success).toBe(true)
+      const payload = vi.mocked(persistConfirmedIngestion).mock.calls[0][1]
+      expect(payload.auction_event?.non_winner_payment).toBe(4_500)
+      expect(payload).not.toHaveProperty('ledger_entries')
+      expect(payload).not.toHaveProperty('ledger_entry')
+    })
+
+    it('preserves a complete source date and leaves an unknown date null', async () => {
+      const datedMessage = `[05/07/2025, 10:30] organiser:\n${NORMAL_MSG}`
+
+      mockSingle.mockResolvedValueOnce({ data: VALID_CHIT })
+      mockSingle.mockResolvedValueOnce({ data: null })
+      mockSingle.mockResolvedValueOnce({ data: null })
+      vi.mocked(persistConfirmedIngestion).mockResolvedValueOnce({ success: true })
+      await confirmIngestion(REAL_UUID, datedMessage, 5)
+
+      let payload = vi.mocked(persistConfirmedIngestion).mock.calls[0][1]
+      expect(payload.auction_event?.auction_date).toBe('2025-07-05')
+
+      vi.mocked(persistConfirmedIngestion).mockClear()
+      mockSingle.mockResolvedValueOnce({ data: VALID_CHIT })
+      mockSingle.mockResolvedValueOnce({ data: null })
+      mockSingle.mockResolvedValueOnce({ data: null })
+      vi.mocked(persistConfirmedIngestion).mockResolvedValueOnce({ success: true })
+      await confirmIngestion(REAL_UUID, NORMAL_MSG, 5)
+
+      payload = vi.mocked(persistConfirmedIngestion).mock.calls[0][1]
+      expect(payload.auction_event?.auction_date).toBeNull()
+    })
+
+    it('rejects a round above the chit duration', async () => {
+      mockSingle.mockResolvedValueOnce({ data: VALID_CHIT })
+      mockSingle.mockResolvedValueOnce({ data: null })
+
+      const result = await confirmIngestion(REAL_UUID, NORMAL_MSG, 21)
+
+      expect(result).toEqual({
+        success: false,
+        error: 'Round 21 is outside the valid range 1..20.',
+      })
       expect(persistConfirmedIngestion).not.toHaveBeenCalled()
     })
   })

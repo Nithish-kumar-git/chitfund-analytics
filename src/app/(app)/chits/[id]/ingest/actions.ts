@@ -4,10 +4,10 @@ import { createClient } from '@/lib/supabase/server'
 import { processWhatsAppMessage, type ChitConfig } from '@/lib/ingestion/ingest'
 import { persistConfirmedIngestion } from '@/lib/ingestion/persistence'
 import type { IngestionResult, ConfirmedIngestion } from '@/lib/ingestion/types'
-import { contentHash, normaliseMessage } from '@/lib/whatsapp'
+import { contentHash, extractSourceEventDate, normaliseMessage } from '@/lib/whatsapp'
 import { revalidatePath } from 'next/cache'
-// Phase 7F: Verification invalidation on auction_event and ledger_entry INSERT
-// is handled atomically by DB triggers (migration 20261003000002_*).
+// Verification invalidation on auction-event mutations and ledger inserts is
+// handled atomically by database triggers.
 // No application-layer clearCashFlowVerification call is needed here.
 
 export async function processIngestionText(
@@ -75,6 +75,16 @@ export async function processIngestionText(
       isDuplicate,
       chitConfig
     )
+
+    if (result.status !== 'DUPLICATE' && result.status !== 'PARSE_FAILED') {
+      const detectedRound = roundNumber ?? result.parse_result.metadata.round_number
+      if (detectedRound && detectedRound > Number(chit.duration_months)) {
+        return {
+          success: false,
+          error: `Round ${detectedRound} is outside the valid range 1..${chit.duration_months}.`,
+        }
+      }
+    }
 
     return { success: true, result }
   } catch (error: any) {
@@ -144,6 +154,7 @@ export async function confirmIngestion(
 
     const eventType = validResult.parse_result.event_type || 'UNKNOWN'
     const parsedFields = validResult.parse_result.fields
+    const sourceDate = extractSourceEventDate(validResult.input.raw_text)
 
     // Detect explicit winner from parser. Only true when message explicitly states it.
     // Never invent: absent means unknown.
@@ -174,35 +185,12 @@ export async function confirmIngestion(
         calculation_status: validResult.status === 'NEEDS_REVIEW'
             ? (validResult.proposed_calculation_status === 'FLAGGED_MISMATCH' ? 'FLAGGED_MISMATCH' : 'MANUAL_OVERRIDE')
             : (validResult.proposed_calculation_status || 'INDUSTRY_DEFAULT'),
-        auction_date: new Date(),
+        auction_date: sourceDate?.isoDate ?? null,
+        notes: sourceDate && !sourceDate.isoDate
+          ? `Source date "${sourceDate.raw}" is incomplete or invalid; auction date remains unknown.`
+          : undefined,
       },
     }
-
-    // Build ledger entries. Winner round gets INSTALLMENT_PAID + AUCTION_PAYOUT_RECEIVED.
-    // Non-winner gets INSTALLMENT_PAID only.
-    // No ledger entry at all if the stated_payment is absent.
-    const ledgerEntries: ConfirmedIngestion['ledger_entries'] = []
-
-    if (parsedFields?.stated_payment) {
-      ledgerEntries.push({
-        entry_type: 'INSTALLMENT_PAID',
-        amount: parsedFields.stated_payment,
-        transaction_date: new Date(),
-      })
-    }
-
-    if (wonByUs && parsedFields?.our_payout_amount) {
-      // Actual payout explicitly recorded — create the inflow entry.
-      ledgerEntries.push({
-        entry_type: 'AUCTION_PAYOUT_RECEIVED',
-        amount: parsedFields.our_payout_amount,
-        transaction_date: new Date(),
-      })
-    }
-    // If wonByUs but our_payout_amount is absent, the warning was already emitted by the parser.
-    // Do NOT fabricate an amount. The user must enter it manually via a ledger correction.
-
-    confirmed.ledger_entries = ledgerEntries.length > 0 ? ledgerEntries : undefined
 
     const persistResult = await persistConfirmedIngestion(supabase, confirmed)
 

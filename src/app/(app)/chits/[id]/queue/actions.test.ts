@@ -134,7 +134,7 @@ describe('Queue Actions', () => {
         chits: {
           select: vi.fn().mockReturnThis(),
           eq: vi.fn().mockReturnThis(),
-          single: vi.fn().mockResolvedValue({ data: { face_value: 100000, base_installment: 10000, member_count: 10 }, error: null })
+          single: vi.fn().mockResolvedValue({ data: { face_value: 100000, base_installment: 10000, member_count: 10, duration_months: 10 }, error: null })
         },
         auction_events: {
           select: vi.fn().mockReturnThis(),
@@ -166,6 +166,8 @@ describe('Queue Actions', () => {
       expect(persistPayload.existing_source_message_id).toBe('sm-1')
       expect(persistPayload.parse_status).toBe('PARSED')
       expect(persistPayload.auction_event?.round_number).toBe(1)
+      expect(persistPayload.auction_event?.non_winner_payment).toBe(8000)
+      expect(persistPayload).not.toHaveProperty('ledger_entries')
     })
 
     it('6. duplicate round is rejected', async () => {
@@ -225,6 +227,59 @@ describe('Queue Actions', () => {
       expect(res.success).toBe(false)
       expect(res.error).toContain('Cannot confirm unparseable message')
       expect(vi.mocked(persistence.persistConfirmedIngestion)).not.toHaveBeenCalled()
+    })
+
+    it('9. preserves the queued source date without creating a cash flow', async () => {
+      setupMockSupabaseFrom({
+        source_messages: {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          single: vi.fn().mockResolvedValue({
+            data: {
+              raw_text: '[05/07/2025, 10:30] amount to pay',
+              parse_status: 'PENDING',
+              content_hash: 'hash1',
+              received_at: '2025-07-06T00:00:00Z',
+            },
+            error: null,
+          }),
+        },
+        chits: {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          single: vi.fn().mockResolvedValue({
+            data: { face_value: 100000, base_installment: 10000, member_count: 10, duration_months: 10 },
+            error: null,
+          }),
+        },
+        auction_events: {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          limit: vi.fn().mockReturnThis(),
+          maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+        },
+      })
+      vi.mocked(ingest.processWhatsAppMessage).mockReturnValue({
+        status: 'READY_FOR_CONFIRMATION',
+        input: {
+          profile_id: 'user1',
+          chit_id: 'chit1',
+          raw_text: '[05/07/2025, 10:30] amount to pay',
+          round_number: 1,
+        },
+        hash: 'hash1',
+        warnings: [],
+        parse_result: { event_type: 'NORMAL', metadata: { round_number: 1 }, fields: { stated_payment: 8000 } } as any,
+        proposed_calculation_status: 'VERIFIED_FORMULA',
+      } as any)
+      vi.mocked(persistence.persistConfirmedIngestion).mockResolvedValue({ success: true })
+
+      const result = await confirmFromQueue('sm-1', 'chit1')
+
+      expect(result.success).toBe(true)
+      const payload = vi.mocked(persistence.persistConfirmedIngestion).mock.calls[0][1]
+      expect(payload.auction_event?.auction_date).toBe('2025-07-05')
+      expect(payload).not.toHaveProperty('ledger_entries')
     })
   })
 })

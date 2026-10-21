@@ -1,4 +1,12 @@
 // =============================================================================
+
+export type Json =
+  | string
+  | number
+  | boolean
+  | null
+  | { [key: string]: Json | undefined }
+  | Json[]
 // Chit Fund Analytics — Database TypeScript Types
 // Matches supabase/migrations/20260928000001_initial_schema.sql
 //         supabase/migrations/20261003000001_add_cash_flow_verification.sql
@@ -222,7 +230,24 @@ export interface Database {
       user_rules:      { Row: UserRule;      Insert: UserRuleInsert;      Update: Partial<UserRuleInsert> }
     }
     Views: Record<string, never>
-    Functions: Record<string, never>
+    Functions: {
+      confirm_ingestion: {
+        Args: {
+          p_chit_id: string
+          p_raw_text: string
+          p_received_at: string | null
+          p_content_hash: string
+          p_parse_status: string
+          p_existing_source_message_id: string | null
+          p_auction_event: Json
+        }
+        Returns: Json
+      }
+      verify_chit_cash_flows: {
+        Args: { p_chit_id: string }
+        Returns: boolean
+      }
+    }
     Enums: {
       chit_status:         ChitStatus
       commission_type:     CommissionType

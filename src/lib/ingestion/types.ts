@@ -72,14 +72,7 @@ export interface ConfirmedAuctionEvent {
   won_by_us?: boolean | null
   our_payout_amount?: number
   calculation_status: CalculationStatus
-  auction_date?: Date
-  notes?: string
-}
-
-export interface ConfirmedLedgerEntry {
-  entry_type: 'INSTALLMENT_PAID' | 'AUCTION_PAYOUT_RECEIVED'
-  amount: number
-  transaction_date: Date
+  auction_date?: string | null
   notes?: string
 }
 
@@ -94,13 +87,4 @@ export interface ConfirmedIngestion {
   existing_source_message_id?: string
 
   auction_event?: ConfirmedAuctionEvent
-  /**
-   * One or more ledger entries to persist in insertion order.
-   * A winner round produces 2 entries: INSTALLMENT_PAID + AUCTION_PAYOUT_RECEIVED.
-   * A non-winner round produces 1 entry: INSTALLMENT_PAID.
-   * If omitted, no ledger entry is created.
-   */
-  ledger_entries?: ConfirmedLedgerEntry[]
-  /** @deprecated Use ledger_entries instead. Kept for backwards compatibility only. */
-  ledger_entry?: ConfirmedLedgerEntry
 }

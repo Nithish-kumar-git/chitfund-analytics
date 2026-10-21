@@ -1,96 +1,63 @@
-# Chit Fund Analytics — maintenance handoff
+# Chit Fund Analytics — financial-integrity repair handoff
 
-Updated 21 October 2026 (Asia/Calcutta). This is the authoritative resumption record for the current repository state. It does not certify the application for production financial use.
+Updated 22 October 2026 (Asia/Calcutta). This records the bounded repair based on `a62c4b895f18f36e44dfa3ebba8b0ec1edf7f371`. It is not a production-readiness certification.
 
-## Repository and Git state
+## Repository state inspected before the repair
 
 | Item | Verified value |
 | --- | --- |
 | Repository | <https://github.com/Nithish-kumar-git/chitfund-analytics> |
-| Authoritative checkout for this closeout | `C:\Users\itsni\OneDrive\Documents\ChatGPT\project collections\chitfund-analytics` |
-| Default / active branch | `main` / `main` |
-| Documentation base commit | `d65a9cd9f02005f66951f42a9f8437cd8ebb65ff` |
-| Base synchronization | Local `main` matched `origin/main`; zero ahead and zero behind |
-| Base working tree | Clean; no modified or untracked user work |
+| Checkout | `C:\Users\itsni\Documents\Codex\2026-10-22\task-chit-fund-analytics-fix-confirmed\chitfund-analytics` |
+| Branch / tracking | `main` tracking `origin/main` |
+| Starting HEAD | `a62c4b895f18f36e44dfa3ebba8b0ec1edf7f371` |
+| Starting synchronization | Zero commits ahead and zero behind |
+| Starting working tree | Clean |
+| Latest pre-repair CI | Run 39619933315, successful on the starting HEAD; the workflow still used Node 20 |
 
-The documentation commit containing this file cannot embed its own hash. After committing, identify it with `git log -1 --format=%H -- docs/CHIT_FUND_ANALYTICS_HANDOFF.md` and verify the remote tip with `git ls-remote origin refs/heads/main`. Never reset, clean, stash, force-push or rewrite history.
+The earlier implementation reference `d65a9cd9f02005f66951f42a9f8437cd8ebb65ff` remains in history. The README and the prior closeout documentation were preserved; this handoff is the intentional update to the latter.
 
-## Purpose and architecture
+## Implemented repairs
 
-The project records personal chit-fund source messages, expected auction-round state, reviewed discrepancies and actual cash-flow ledger entries. It exposes dashboards, verification queues, printable statements, Excel exports and a Markdown audit export.
+1. Confirmed imports no longer create `INSTALLMENT_PAID` or payout ledger rows. Parsed amounts remain expected auction-event facts until a user explicitly records an actual cash movement.
+2. Auction dates are taken only from explicit complete source dates. Incomplete or invalid source dates are retained in source metadata/notes while `auction_date` remains null; the current date is never substituted as history.
+3. Confirmation now calls one `confirm_ingestion` PostgreSQL function, so source-message and auction-event changes commit or roll back together.
+4. A partial unique index enforces one correction per original ledger entry. The correction trigger validates ownership and event consistency and applies `MANUAL_OVERRIDE` in the same transaction; the action safely maps a concurrent uniqueness conflict.
+5. Parent `updated_at` values are strictly monotonic. Auction insert/update/delete and ledger insert triggers always invalidate and version the parent, even when it was already unverified. Whole-chit verification is a locked database function sharing the parent-row serialization point.
+6. Auction rounds are constrained to `1..duration_months`, and verification checks the exact expected round set rather than a row count.
+7. Composite foreign keys enforce profile/chit ownership across source messages, auction events, ledger entries and corrections. Existing RLS remains enabled and unchanged.
+8. CI now uses Node 22, matching the installed Supabase packages' declared runtime requirement.
 
-- Frontend/server: Next.js 16, React 19, TypeScript 5 and Tailwind CSS 4.
-- Data/auth: Supabase Auth and PostgreSQL with tracked RLS policies.
-- Calculations: Big.js-backed expected-value and ROI logic.
-- Tests/hosting: Vitest, GitHub Actions and Vercel.
-- Verified development assumption: Node.js 20 as used by CI; PowerShell examples are appropriate on the current Windows checkout.
+The migration preflights existing rows and aborts on inconsistent historical data instead of silently rewriting financial history.
 
-The conceptual boundary is source information -> expected state -> human verification -> actual ledger -> analytics. Current code does not fully enforce that boundary, as described below.
+## Changed areas
 
-## Environment-variable names
-
-Values are private and must never be printed or committed.
-
-- `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-- `NEXT_PUBLIC_APP_URL`
-
-## Setup, run and checks
-
-```powershell
-npm ci
-Copy-Item .env.local.example .env.local
-npm run dev
-```
-
-Focused project commands:
-
-```sh
-npm test
-npx tsc --noEmit
-npm run lint
-npm run build
-npm start
-```
-
-Do not install dependencies or run full suites merely for documentation edits. Do not apply Supabase migrations, inspect production rows, change credentials or alter permissions without explicit approval.
+- Application actions: ingestion, queue confirmation, ledger correction and verification.
+- Ingestion/date support: persistence payloads, source-date extraction and database function types.
+- Database: `supabase/migrations/20261021225438_financial_integrity_repairs.sql`.
+- Database regression specification: `supabase/tests/financial_integrity_regression.sql`.
+- Focused Vitest coverage for dates, atomic RPC payloads, due-versus-paid semantics, bounds, correction conflicts and locked verification.
+- CI runtime: `.github/workflows/ci.yml`.
 
 ## Verification evidence
 
-- The repository README previously recorded 518 Vitest tests at the application checkpoint. This closeout did not rerun them and does not present that count as fresh evidence.
-- The tracked GitHub Actions workflow runs `npm ci`, tests, TypeScript and the production build on `main` pushes and pull requests.
-- The tracked schema verification script is `supabase/tests/verify_schema.sql`; it was not executed against any database in this closeout.
-- Documentation validation in this closeout is limited to Markdown/link/image checks, code/config consistency and Git preservation checks.
+- Focused regression run: 6 files, 67 tests passed.
+- Full Vitest run: 26 files passed, 498 tests passed; 1 file / 17 placeholder integration tests remained intentionally skipped. They were not enabled by removing `describe.skip`.
+- TypeScript: `npx tsc --noEmit` passed.
+- Production build: `npm run build` passed on Node `v22.20.0`.
+- Diff hygiene: `git diff --check` passed after final formatting.
+- Lint is not green repository-wide: the existing configuration reports 163 errors and 48 warnings, dominated by existing `no-explicit-any` and React hook findings. This repair did not broaden into a lint cleanup.
+- `npm ci` reported the repository's existing dependency audit findings (3 moderate, 9 high, 2 critical); no broad dependency upgrade was performed.
 
-## Deployment state
+## PostgreSQL verification limitation
 
-| Item | Verified value |
-| --- | --- |
-| Public URL | <https://chitfund-analytics.vercel.app/> |
-| HTTP check | `200`, with unauthenticated redirect to `/login`, on 21 October 2026 |
-| Vercel state | `READY`, production |
-| Deployed commit | `d65a9cd9f02005f66951f42a9f8437cd8ebb65ff` |
-| Deployment ID | `dpl_CKM24BkWrNPYiMgqb3Z8g9Wscgm7` |
+The SQL regression file covers atomic rollback, round bounds and exact completeness, monotonic invalidation, correction uniqueness/side effects, and cross-owner links. It was not executed: `psql` is unavailable, the installed Docker client has no running engine, and this checkout has no local Supabase configuration. No production or remote database was contacted. Therefore migration execution and real PostgreSQL concurrency behavior remain unverified.
 
-This proves the identified build is hosted and reachable. It does not prove production database contents, correctness of live financial records or the absence of race conditions.
+## Deployment and permission boundary
 
-## Unresolved blockers
+No deployment was performed. No production data, RLS policy, production permission, credential or hosted configuration was inspected or changed. The migration adds constraints, triggers and authenticated invoker functions but does not weaken existing RLS.
 
-1. Import confirmation currently treats parsed `stated_payment` as an actual `INSTALLMENT_PAID` entry; due/stated and paid semantics must be separated.
-2. Import confirmation assigns current timestamps to auction and transaction dates instead of preserving reviewed historical dates.
-3. Auction, ledger and source-message persistence uses sequential Supabase calls without one PostgreSQL transaction and can leave partial ingestion.
-4. Correction is a check-then-insert flow without a database uniqueness guarantee on `corrects_entry_id`, allowing concurrent duplicate corrections.
-5. Whole-chit verification has an optimistic `updated_at` guard, but per-round confirmation paths do not consistently prove a conditional state transition or distinguish a zero-row update from success.
-6. The schema does not enforce the full append-only, correction-shape, sign, single-correction and cross-owner relationship invariants described by the model.
+## Remaining blockers and freeze decision
 
-Proposed fixes are not current behavior. Keep these blockers in every release note until implementation, isolated PostgreSQL verification and concurrency tests are complete.
+Before release or freeze, apply the migration to a disposable PostgreSQL/Supabase instance, run `supabase/tests/financial_integrity_regression.sql`, add a two-session correction/verification race exercise, and confirm the post-push GitHub Actions run. Any preflight failure must be reviewed and repaired through an audited data process; do not edit history automatically.
 
-## Next action and approval boundary
-
-Next code action: design a single reviewed PostgreSQL RPC/transaction for confirmation that accepts explicit historical event/payment dates and separates expected installments from actual payments. In the same approved repair, add database constraints for correction and ownership invariants, then test concurrent correction and verification paths against isolated PostgreSQL.
-
-Explicit approval is required before changing application code, applying migrations, touching production Supabase data or permissions, rotating credentials, changing Vercel settings, deploying a repair, force-pushing or rewriting history.
-
-## Freeze decision
-
-Documentation may be frozen after this closeout. The application must remain in **needs code repairs** state; do not label it production-ready.
+The bounded code repair is complete, but the project should **not be frozen or called production-ready** until those database and CI checks pass. Identify the repair commit with `git log -1 --format=%H` and verify the remote tip with `git ls-remote origin refs/heads/main`.

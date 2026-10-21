@@ -1,405 +1,77 @@
-/**
- * Tests for Phase 7F — Cash-Flow Verification Workflow (atomicity-hardened)
- *
- * Architecture after atomicity fix:
- *   - clearCashFlowVerification helper has been REMOVED from verify-actions.ts
- *   - Invalidation on ledger_entry / auction_event INSERT is handled by DB triggers
- *   - updateChitAction inlines verified_at=null into its own UPDATE when
- *     financial fields change (tested in chits/actions.test.ts)
- *   - verifyChitCashFlows uses an optimistic lock (updated_at + status guard)
- *     to close the TOCTOU race
- *
- * This test file covers:
- * A. verifyChitCashFlows — all prerequisite checks + success + optimistic lock
- * B. ROI engine gating — verified / unverified / post-mutation states
- * C. updateChitAction — financial vs. non-financial field invalidation (see
- *    chits/actions.test.ts for full update coverage; trigger-based invalidation
- *    is tested below with mocked Supabase to verify payload shape)
- */
-
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { verifyChitCashFlows } from './verify-actions'
 
-// Mock the Supabase server client
-vi.mock('@/lib/supabase/server', () => ({
-  createClient: vi.fn(),
-}))
-vi.mock('next/cache', () => ({
-  revalidatePath: vi.fn(),
-}))
+vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
+vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 
-// ---------------------------------------------------------------------------
-// Constants — valid RFC 4122 v4 UUIDs required by Zod z.string().uuid()
-// ---------------------------------------------------------------------------
-const CHIT_ID   = 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
-const USER_ID   = 'c9bf9e57-1685-4c89-bafb-ff5af830be8a'
-const UPDATED_AT = '2026-10-01T10:00:00.000Z'
+const CHIT_ID = 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
+const USER_ID = 'c9bf9e57-1685-4c89-bafb-ff5af830be8a'
 
-// ---------------------------------------------------------------------------
-// A. verifyChitCashFlows — unit tests
-// ---------------------------------------------------------------------------
+function clientWithRpc(result: { data: unknown; error: unknown }) {
+  return {
+    auth: {
+      getUser: vi.fn().mockResolvedValue({ data: { user: { id: USER_ID } } }),
+    },
+    rpc: vi.fn().mockResolvedValue(result),
+    from: vi.fn(),
+  }
+}
 
 describe('verifyChitCashFlows', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-  })
+  beforeEach(() => vi.clearAllMocks())
 
-  it('rejects unauthenticated users', async () => {
-    const mockSupabase: any = {
-      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: null } }) },
-      from: vi.fn(),
-    }
-    ;(createClient as any).mockResolvedValue(mockSupabase)
-
-    const result = await verifyChitCashFlows({ chit_id: CHIT_ID })
-    expect(result).toEqual({ success: false, error: 'Not authenticated' })
-  })
-
-  it('rejects non-UUID chit_id — Zod validates before any network call', async () => {
+  it('validates the chit id before accessing the database', async () => {
     const result = await verifyChitCashFlows({ chit_id: 'not-a-uuid' })
+
     expect(result.success).toBe(false)
-    if (!result.success) {
-      expect(result.error).toMatch(/Invalid input/)
-    }
+    expect(createClient).not.toHaveBeenCalled()
   })
 
-  it('rejects when chit does not exist or is owned by another user', async () => {
-    const mockSupabase: any = {
-      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: USER_ID } } }) },
-      from: vi.fn().mockReturnValue({
-        select: vi.fn().mockReturnThis(),
-        eq: vi.fn().mockReturnThis(),
-        single: vi.fn().mockResolvedValue({ data: null, error: { message: 'Not found' } }),
-      }),
+  it('rejects unauthenticated users without calling the RPC', async () => {
+    const client = {
+      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: null } }) },
+      rpc: vi.fn(),
     }
-    ;(createClient as any).mockResolvedValue(mockSupabase)
+    vi.mocked(createClient).mockResolvedValue(client as any)
 
     const result = await verifyChitCashFlows({ chit_id: CHIT_ID })
-    expect(result).toEqual({ success: false, error: 'Chit not found or permission denied' })
+
+    expect(result).toEqual({ success: false, error: 'Not authenticated' })
+    expect(client.rpc).not.toHaveBeenCalled()
   })
 
-  it('rejects ACTIVE chit — only COMPLETED may be verified', async () => {
-    const mockSupabase: any = {
-      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: USER_ID } } }) },
-      from: vi.fn().mockReturnValue({
-        select: vi.fn().mockReturnThis(),
-        eq: vi.fn().mockReturnThis(),
-        single: vi.fn().mockResolvedValue({
-          data: { id: CHIT_ID, profile_id: USER_ID, status: 'ACTIVE', duration_months: 3, updated_at: UPDATED_AT },
-          error: null,
-        }),
-      }),
-    }
-    ;(createClient as any).mockResolvedValue(mockSupabase)
+  it('delegates the complete check-and-write operation to one locked RPC', async () => {
+    const client = clientWithRpc({ data: true, error: null })
+    vi.mocked(createClient).mockResolvedValue(client as any)
 
     const result = await verifyChitCashFlows({ chit_id: CHIT_ID })
-    expect(result.success).toBe(false)
-    if (!result.success) {
-      expect(result.error).toMatch(/Only COMPLETED/)
-      expect(result.error).toMatch(/ACTIVE/)
-    }
-  })
 
-  it('rejects when rounds are missing (expected 3, found 2)', async () => {
-    const mockSupabase: any = {
-      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: USER_ID } } }) },
-      from: vi.fn()
-        .mockReturnValueOnce({
-          select: vi.fn().mockReturnThis(),
-          eq: vi.fn().mockReturnThis(),
-          single: vi.fn().mockResolvedValue({
-            data: { id: CHIT_ID, profile_id: USER_ID, status: 'COMPLETED', duration_months: 3, updated_at: UPDATED_AT },
-            error: null,
-          }),
-        })
-        .mockReturnValueOnce({
-          select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              eq: vi.fn().mockResolvedValue({ count: 2, error: null }),
-            })
-          }),
-        }),
-    }
-    ;(createClient as any).mockResolvedValue(mockSupabase)
-
-    const result = await verifyChitCashFlows({ chit_id: CHIT_ID })
-    expect(result.success).toBe(false)
-    if (!result.success) {
-      expect(result.error).toMatch(/Expected 3.*found 2/)
-    }
-  })
-
-  it('rejects when unverified NORMAL rounds exist', async () => {
-    const mockSupabase: any = {
-      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: USER_ID } } }) },
-      from: vi.fn()
-        .mockReturnValueOnce({
-          select: vi.fn().mockReturnThis(),
-          eq: vi.fn().mockReturnThis(),
-          single: vi.fn().mockResolvedValue({
-            data: { id: CHIT_ID, profile_id: USER_ID, status: 'COMPLETED', duration_months: 3, updated_at: UPDATED_AT },
-            error: null,
-          }),
-        })
-        .mockReturnValueOnce({
-          select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              eq: vi.fn().mockResolvedValue({ count: 3, error: null }),
-            })
-          }),
-        })
-        .mockReturnValueOnce({
-          select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              eq: vi.fn().mockReturnValue({
-                eq: vi.fn().mockReturnValue({
-                  in: vi.fn().mockResolvedValue({ count: 1, error: null }),
-                })
-              })
-            })
-          }),
-        }),
-    }
-    ;(createClient as any).mockResolvedValue(mockSupabase)
-
-    const result = await verifyChitCashFlows({ chit_id: CHIT_ID })
-    expect(result.success).toBe(false)
-    if (!result.success) {
-      expect(result.error).toMatch(/NORMAL round\(s\) are not verified/)
-    }
-  })
-
-  it('succeeds and writes verified_at + verified_by from session', async () => {
-    // Final UPDATE returns the updated row (optimistic lock passes)
-    const maybeSingleFn = vi.fn().mockResolvedValue({ data: { id: CHIT_ID }, error: null })
-    const selectAfterUpdateFn = vi.fn().mockReturnValue({ maybeSingle: maybeSingleFn })
-    const eqChainFns: any[] = []
-
-    // Build a chainable eq() that returns itself, then the select result at the end
-    const buildUpdateChain = (updatePayload: any) => {
-      const chain: any = {
-        eq: vi.fn().mockImplementation(() => chain),
-        select: selectAfterUpdateFn,
-      }
-      return chain
-    }
-
-    const updateFn = vi.fn().mockImplementation(buildUpdateChain)
-
-    const mockSupabase: any = {
-      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: USER_ID } } }) },
-      from: vi.fn()
-        // Call 1: fetch chit (with updated_at)
-        .mockReturnValueOnce({
-          select: vi.fn().mockReturnThis(),
-          eq: vi.fn().mockReturnThis(),
-          single: vi.fn().mockResolvedValue({
-            data: { id: CHIT_ID, profile_id: USER_ID, status: 'COMPLETED', duration_months: 3, updated_at: UPDATED_AT },
-            error: null,
-          }),
-        })
-        // Call 2: round count
-        .mockReturnValueOnce({
-          select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              eq: vi.fn().mockResolvedValue({ count: 3, error: null }),
-            })
-          }),
-        })
-        // Call 3: unverified count
-        .mockReturnValueOnce({
-          select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              eq: vi.fn().mockReturnValue({
-                eq: vi.fn().mockReturnValue({
-                  in: vi.fn().mockResolvedValue({ count: 0, error: null }),
-                })
-              })
-            })
-          }),
-        })
-        // Call 4: final UPDATE with optimistic lock
-        .mockReturnValueOnce({ update: updateFn }),
-    }
-    ;(createClient as any).mockResolvedValue(mockSupabase)
-
-    const result = await verifyChitCashFlows({ chit_id: CHIT_ID })
     expect(result).toEqual({ success: true })
-
-    // Confirm verified_by is the SESSION user id, not client-supplied
-    const updatePayload = updateFn.mock.calls[0]?.[0]
-    expect(updatePayload?.verified_by).toBe(USER_ID)
-    expect(typeof updatePayload?.verified_at).toBe('string')
+    expect(client.rpc).toHaveBeenCalledTimes(1)
+    expect(client.rpc).toHaveBeenCalledWith('verify_chit_cash_flows', {
+      p_chit_id: CHIT_ID,
+    })
+    expect(client.from).not.toHaveBeenCalled()
     expect(revalidatePath).toHaveBeenCalledWith(`/chits/${CHIT_ID}`)
   })
 
-  // ── Optimistic lock tests ─────────────────────────────────────────────────
-
-  it('TOCTOU guard: returns error when optimistic lock finds zero rows (concurrent mutation)', async () => {
-    // The UPDATE matches 0 rows because updated_at changed between read and write.
-    const maybeSingleFn = vi.fn().mockResolvedValue({ data: null, error: null }) // 0 rows
-    const selectAfterUpdateFn = vi.fn().mockReturnValue({ maybeSingle: maybeSingleFn })
-
-    const buildUpdateChain = (_payload: any) => ({
-      eq: vi.fn().mockReturnThis(),
-      select: selectAfterUpdateFn,
-    })
-    const updateFn = vi.fn().mockImplementation(buildUpdateChain)
-
-    const mockSupabase: any = {
-      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: USER_ID } } }) },
-      from: vi.fn()
-        .mockReturnValueOnce({
-          select: vi.fn().mockReturnThis(),
-          eq: vi.fn().mockReturnThis(),
-          single: vi.fn().mockResolvedValue({
-            data: { id: CHIT_ID, profile_id: USER_ID, status: 'COMPLETED', duration_months: 3, updated_at: UPDATED_AT },
-            error: null,
-          }),
-        })
-        .mockReturnValueOnce({
-          select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              eq: vi.fn().mockResolvedValue({ count: 3, error: null }),
-            })
-          }),
-        })
-        .mockReturnValueOnce({
-          select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              eq: vi.fn().mockReturnValue({
-                eq: vi.fn().mockReturnValue({
-                  in: vi.fn().mockResolvedValue({ count: 0, error: null }),
-                })
-              })
-            })
-          }),
-        })
-        .mockReturnValueOnce({ update: updateFn }),
-    }
-    ;(createClient as any).mockResolvedValue(mockSupabase)
+  it.each([
+    'Only COMPLETED chits can be verified. Current status: ACTIVE',
+    'Not all expected rounds are recorded. Missing: 2',
+    '1 NORMAL round(s) are not verified. Resolve them before verifying.',
+  ])('returns the database prerequisite error: %s', async (message) => {
+    const client = clientWithRpc({ data: null, error: { message } })
+    vi.mocked(createClient).mockResolvedValue(client as any)
 
     const result = await verifyChitCashFlows({ chit_id: CHIT_ID })
-    expect(result.success).toBe(false)
-    if (!result.success) {
-      expect(result.error).toMatch(/modified by another action/)
-    }
-    // Verified_at must NOT have been committed (zero rows matched)
-  })
 
-  it('TOCTOU guard: status changed to ACTIVE between read and write — lock prevents verification', async () => {
-    // The WHERE status = 'COMPLETED' AND updated_at = X condition matches 0 rows
-    // because status changed to ACTIVE (another update changed it).
-    const maybeSingleFn = vi.fn().mockResolvedValue({ data: null, error: null })
-    const selectAfterUpdateFn = vi.fn().mockReturnValue({ maybeSingle: maybeSingleFn })
-
-    const buildUpdateChain = (_payload: any) => ({
-      eq: vi.fn().mockReturnThis(),
-      select: selectAfterUpdateFn,
-    })
-    const updateFn = vi.fn().mockImplementation(buildUpdateChain)
-
-    const mockSupabase: any = {
-      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: USER_ID } } }) },
-      from: vi.fn()
-        .mockReturnValueOnce({
-          select: vi.fn().mockReturnThis(),
-          eq: vi.fn().mockReturnThis(),
-          single: vi.fn().mockResolvedValue({
-            // Read as COMPLETED...
-            data: { id: CHIT_ID, profile_id: USER_ID, status: 'COMPLETED', duration_months: 3, updated_at: UPDATED_AT },
-            error: null,
-          }),
-        })
-        .mockReturnValueOnce({
-          select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              eq: vi.fn().mockResolvedValue({ count: 3, error: null }),
-            })
-          }),
-        })
-        .mockReturnValueOnce({
-          select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              eq: vi.fn().mockReturnValue({
-                eq: vi.fn().mockReturnValue({
-                  in: vi.fn().mockResolvedValue({ count: 0, error: null }),
-                })
-              })
-            })
-          }),
-        })
-        // ...but the UPDATE WHERE status='COMPLETED' AND updated_at=X matches 0 rows
-        // because between read and write it became ACTIVE with new updated_at
-        .mockReturnValueOnce({ update: updateFn }),
-    }
-    ;(createClient as any).mockResolvedValue(mockSupabase)
-
-    const result = await verifyChitCashFlows({ chit_id: CHIT_ID })
-    expect(result.success).toBe(false)
-    if (!result.success) {
-      expect(result.error).toMatch(/modified by another action/)
-    }
-  })
-
-  it('verified_by is always derived from session — not client input', async () => {
-    const maybeSingleFn = vi.fn().mockResolvedValue({ data: { id: CHIT_ID }, error: null })
-    const selectAfterUpdateFn = vi.fn().mockReturnValue({ maybeSingle: maybeSingleFn })
-
-    const buildUpdateChain = (_p: any) => ({
-      eq: vi.fn().mockReturnThis(),
-      select: selectAfterUpdateFn,
-    })
-    const updateFn = vi.fn().mockImplementation(buildUpdateChain)
-
-    const SESSION_USER = 'session-only-user-xyz'
-
-    const mockSupabase: any = {
-      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: SESSION_USER } } }) },
-      from: vi.fn()
-        .mockReturnValueOnce({
-          select: vi.fn().mockReturnThis(),
-          eq: vi.fn().mockReturnThis(),
-          single: vi.fn().mockResolvedValue({
-            data: { id: CHIT_ID, profile_id: SESSION_USER, status: 'COMPLETED', duration_months: 3, updated_at: UPDATED_AT },
-            error: null,
-          }),
-        })
-        .mockReturnValueOnce({
-          select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              eq: vi.fn().mockResolvedValue({ count: 3, error: null }),
-            })
-          }),
-        })
-        .mockReturnValueOnce({
-          select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              eq: vi.fn().mockReturnValue({
-                eq: vi.fn().mockReturnValue({
-                  in: vi.fn().mockResolvedValue({ count: 0, error: null }),
-                })
-              })
-            })
-          }),
-        })
-        .mockReturnValueOnce({ update: updateFn }),
-    }
-    ;(createClient as any).mockResolvedValue(mockSupabase)
-
-    // The function signature only accepts chit_id — there is no client-supplied
-    // verified_by parameter possible. TypeScript enforces this at compile time.
-    await verifyChitCashFlows({ chit_id: CHIT_ID })
-
-    const updatePayload = updateFn.mock.calls[0]?.[0]
-    // Must be the SESSION user, not any hypothetical client input
-    expect(updatePayload?.verified_by).toBe(SESSION_USER)
+    expect(result).toEqual({ success: false, error: message })
+    expect(revalidatePath).not.toHaveBeenCalled()
   })
 })
-
 // ---------------------------------------------------------------------------
 // B. ROI engine — Phase 7F verification gating (pure functional tests)
 // ---------------------------------------------------------------------------
@@ -539,7 +211,6 @@ describe('ROI engine — Phase 7F verification gating', () => {
     }
   })
 })
-
 // ---------------------------------------------------------------------------
 // C. updateChitAction — financial vs. non-financial field invalidation
 //
@@ -699,3 +370,4 @@ describe('updateChitAction — Phase 7F scoped inline invalidation', () => {
     expect(updatePayload?.verified_at).toBeNull()
   })
 })
+// End of verification action coverage.

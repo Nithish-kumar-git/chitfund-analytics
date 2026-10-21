@@ -1,473 +1,114 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { persistConfirmedIngestion } from './persistence'
 import type { ConfirmedIngestion } from './types'
 
-describe('Persistence Layer', () => {
-  const createMockSupabase = () => {
-    const insertMock = vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ single: vi.fn().mockResolvedValue({ data: { id: 'test-id' }, error: null }) }) })
-    const updateMock = vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) })
-
-    return {
-      from: vi.fn((table: string) => ({
-        insert: insertMock,
-        update: updateMock,
-      }))
-    } as any
+function confirmed(overrides: Partial<ConfirmedIngestion> = {}): ConfirmedIngestion {
+  return {
+    profile_id: '11111111-1111-4111-8111-111111111111',
+    chit_id: '22222222-2222-4222-8222-222222222222',
+    raw_text: 'amount to pay 10060',
+    received_at: new Date('2025-07-05T04:30:00Z'),
+    content_hash: 'hash-1',
+    parse_status: 'PARSED',
+    auction_event: {
+      round_number: 5,
+      event_type: 'NORMAL',
+      non_winner_payment: 10_060,
+      calculation_status: 'VERIFIED_FORMULA',
+      auction_date: null,
+    },
+    ...overrides,
   }
+}
 
-  it('H. Confirmation — unconfirmed ingestion does not persist (not possible by design)', () => {
-    // The type system requires a `ConfirmedIngestion` payload.
-    // An unconfirmed `IngestionResult` cannot be passed to `persistConfirmedIngestion` without a type error.
-    expect(true).toBe(true)
+describe('persistConfirmedIngestion', () => {
+  it('uses one RPC call so source and event commit atomically', async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: { source_message_id: 'source-1', auction_event_id: 'event-1' },
+      error: null,
+    })
+    const from = vi.fn()
+
+    const result = await persistConfirmedIngestion({ rpc, from } as any, confirmed())
+
+    expect(result).toEqual({
+      success: true,
+      source_message_id: 'source-1',
+      auction_event_id: 'event-1',
+    })
+    expect(rpc).toHaveBeenCalledTimes(1)
+    expect(rpc).toHaveBeenCalledWith('confirm_ingestion', expect.any(Object))
+    expect(from).not.toHaveBeenCalled()
   })
 
-  it('H. Confirmation — confirmed ingestion persists the appropriate records', async () => {
-    const supabase = createMockSupabase()
-    const payload: ConfirmedIngestion = {
-      profile_id: 'user1',
-      chit_id: 'chit1',
-      raw_text: 'test',
-      content_hash: 'hash1',
-      parse_status: 'PARSED',
+  it('keeps the stated payment as an auction fact and sends no ledger payload', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: {}, error: null })
+
+    await persistConfirmedIngestion({ rpc } as any, confirmed())
+
+    const args = rpc.mock.calls[0][1]
+    expect(args.p_auction_event.non_winner_payment).toBe(10_060)
+    expect(args.p_auction_event.auction_date).toBeNull()
+    expect(args).not.toHaveProperty('p_ledger_entries')
+  })
+
+  it('preserves a reviewed source date on the auction event', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: {}, error: null })
+    const payload = confirmed({
       auction_event: {
-        round_number: 9,
-        event_type: 'NORMAL',
-        calculation_status: 'VERIFIED_FORMULA'
+        ...confirmed().auction_event!,
+        auction_date: '2025-07-05',
       },
-      ledger_entry: {
-        entry_type: 'INSTALLMENT_PAID',
-        amount: 10060,
-        transaction_date: new Date('2023-01-01')
-      }
-    }
+    })
 
-    await persistConfirmedIngestion(supabase, payload)
+    await persistConfirmedIngestion({ rpc } as any, payload)
 
-    expect(supabase.from).toHaveBeenCalledWith('auction_events')
-    expect(supabase.from).toHaveBeenCalledWith('ledger_entries')
-    expect(supabase.from).toHaveBeenCalledWith('source_messages')
+    expect(rpc.mock.calls[0][1].p_auction_event.auction_date).toBe('2025-07-05')
   })
 
-  it('I. Ledger safety — no ledger entry when no financial transaction is established', async () => {
-    const supabase = createMockSupabase()
-    const payload: ConfirmedIngestion = {
-      profile_id: 'user1',
-      chit_id: 'chit1',
-      raw_text: 'test',
-      content_hash: 'hash1',
-      parse_status: 'PARSED',
-      auction_event: {
-        round_number: 9,
-        event_type: 'NORMAL',
-        calculation_status: 'VERIFIED_FORMULA'
-      }
-      // NO ledger_entry provided
-    }
+  it('passes an existing queue message id without rewriting source content', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: {}, error: null })
 
-    await persistConfirmedIngestion(supabase, payload)
+    await persistConfirmedIngestion(
+      { rpc } as any,
+      confirmed({ existing_source_message_id: '33333333-3333-4333-8333-333333333333' }),
+    )
 
-    expect(supabase.from).not.toHaveBeenCalledWith('ledger_entries')
-    expect(supabase.from).toHaveBeenCalledWith('auction_events')
+    expect(rpc.mock.calls[0][1]).toMatchObject({
+      p_existing_source_message_id: '33333333-3333-4333-8333-333333333333',
+      p_raw_text: 'amount to pay 10060',
+      p_content_hash: 'hash-1',
+    })
   })
 
-  it('J. Manual override — calculation_status reflects MANUAL_OVERRIDE', async () => {
-    const supabase = createMockSupabase()
-    const payload: ConfirmedIngestion = {
-      profile_id: 'user1',
-      chit_id: 'chit1',
-      raw_text: 'test',
-      content_hash: 'hash1',
-      parse_status: 'PARSED',
-      auction_event: {
-        round_number: 9,
-        event_type: 'NORMAL',
-        calculation_status: 'MANUAL_OVERRIDE' // explicit override
-      }
-    }
+  it('maps the round uniqueness conflict safely', async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: null,
+      error: {
+        code: '23505',
+        message: 'duplicate key value violates unique constraint "auction_events_chit_id_round_number_key"',
+      },
+    })
 
-    await persistConfirmedIngestion(supabase, payload)
+    const result = await persistConfirmedIngestion({ rpc } as any, confirmed())
 
-    const insertCalls = supabase.from.mock.results
-    // Vitest mock introspection would show calculation_status: 'MANUAL_OVERRIDE' passed to insert
-    expect(supabase.from).toHaveBeenCalledWith('auction_events')
+    expect(result).toEqual({ success: false, error: 'Round 5 already exists for this chit.' })
   })
 
-  it('L. RLS/security assumptions — persistence is scoped to provided profile_id', async () => {
-    const supabase = createMockSupabase()
-    const payload: ConfirmedIngestion = {
-      profile_id: 'secure-user-123',
-      raw_text: 'test',
-      content_hash: 'hash1',
-      parse_status: 'PARSED'
-    }
+  it('surfaces RPC failure without issuing compensating writes', async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: null,
+      error: { code: '23514', message: 'forced event failure' },
+    })
+    const from = vi.fn()
 
-    await persistConfirmedIngestion(supabase, payload)
-    expect(supabase.from).toHaveBeenCalledWith('source_messages')
+    const result = await persistConfirmedIngestion({ rpc, from } as any, confirmed())
+
+    expect(result).toEqual({
+      success: false,
+      error: 'Failed to confirm ingestion: forced event failure',
+    })
+    expect(rpc).toHaveBeenCalledTimes(1)
+    expect(from).not.toHaveBeenCalled()
   })
-
-  it('Partial Failure — auction succeeds, ledger fails', async () => {
-    const supabase = {
-      from: vi.fn((table: string) => {
-        if (table === 'auction_events') {
-          return { insert: vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ single: vi.fn().mockResolvedValue({ data: { id: 'auction-1' }, error: null }) }) }) }
-        }
-        if (table === 'ledger_entries') {
-          return { insert: vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ single: vi.fn().mockResolvedValue({ data: null, error: { message: 'Ledger failure' } }) }) }) }
-        }
-        return { insert: vi.fn() }
-      })
-    } as any
-
-    const payload: ConfirmedIngestion = {
-      profile_id: 'u1', chit_id: 'c1', raw_text: 'txt', content_hash: 'h1', parse_status: 'PARSED',
-      auction_event: { round_number: 1, event_type: 'NORMAL', calculation_status: 'VERIFIED_FORMULA' },
-      ledger_entry: { entry_type: 'INSTALLMENT_PAID', amount: 100, transaction_date: new Date() }
-    }
-
-    const result = await persistConfirmedIngestion(supabase, payload)
-    expect(result.success).toBe(false)
-    expect(result.error).toContain('Ledger failure')
-    expect(supabase.from).toHaveBeenCalledWith('auction_events')
-    expect(supabase.from).toHaveBeenCalledWith('ledger_entries')
-    expect(supabase.from).not.toHaveBeenCalledWith('source_messages')
-  })
-
-  it('Partial Failure — auction succeeds, ledger succeeds, source fails', async () => {
-    const supabase = {
-      from: vi.fn((table: string) => {
-        if (table === 'auction_events') {
-          return { insert: vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ single: vi.fn().mockResolvedValue({ data: { id: 'auction-1' }, error: null }) }) }) }
-        }
-        if (table === 'ledger_entries') {
-          return { insert: vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ single: vi.fn().mockResolvedValue({ data: { id: 'ledger-1' }, error: null }) }) }) }
-        }
-        if (table === 'source_messages') {
-          return { insert: vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ single: vi.fn().mockResolvedValue({ data: null, error: { message: 'Source failure' } }) }) }) }
-        }
-        return { insert: vi.fn() }
-      })
-    } as any
-
-    const payload: ConfirmedIngestion = {
-      profile_id: 'u1', chit_id: 'c1', raw_text: 'txt', content_hash: 'h1', parse_status: 'PARSED',
-      auction_event: { round_number: 1, event_type: 'NORMAL', calculation_status: 'VERIFIED_FORMULA' },
-      ledger_entry: { entry_type: 'INSTALLMENT_PAID', amount: 100, transaction_date: new Date() }
-    }
-
-    const result = await persistConfirmedIngestion(supabase, payload)
-    expect(result.success).toBe(false)
-    expect(result.error).toContain('Source failure')
-    expect(supabase.from).toHaveBeenCalledWith('source_messages')
-  })
-
-  // ─── Phase 5B: Specific constraint mapping ────────────────────────────────
-
-  it('Phase 5B — auction_events_chit_round_uk constraint maps to duplicate-round error', async () => {
-    // Locks down: ONLY the specific auction_events_chit_round_uk constraint
-    // produces the clean "Round X already exists" message.
-    const supabase = {
-      from: vi.fn((table: string) => {
-        if (table === 'auction_events') {
-          return {
-            insert: vi.fn().mockReturnValue({
-              select: vi.fn().mockReturnValue({
-                single: vi.fn().mockResolvedValue({
-                  data: null,
-                  error: {
-                    code: '23505',
-                    message: 'duplicate key value violates unique constraint "auction_events_chit_round_uk"',
-                    details: 'Key (chit_id, round_number)=(chit1, 5) already exists.'
-                  }
-                })
-              })
-            })
-          }
-        }
-        return { insert: vi.fn() }
-      })
-    } as any
-
-    const payload: ConfirmedIngestion = {
-      profile_id: 'u1', chit_id: 'chit1', raw_text: 'txt', content_hash: 'h1', parse_status: 'PARSED',
-      auction_event: { round_number: 5, event_type: 'NORMAL', calculation_status: 'VERIFIED_FORMULA' }
-    }
-
-    const result = await persistConfirmedIngestion(supabase, payload)
-    expect(result.success).toBe(false)
-    expect(result.error).toBe('Round 5 already exists for this chit.')
-  })
-
-  it('Phase 5B — a different unique constraint does NOT become a duplicate-round error', async () => {
-    // Locks down: other unique constraints fall through to the generic DB error path.
-    const supabase = {
-      from: vi.fn((table: string) => {
-        if (table === 'auction_events') {
-          return {
-            insert: vi.fn().mockReturnValue({
-              select: vi.fn().mockReturnValue({
-                single: vi.fn().mockResolvedValue({
-                  data: null,
-                  error: {
-                    code: '23505',
-                    message: 'duplicate key value violates unique constraint "some_other_unique_constraint"',
-                    details: 'Key (content_hash)=(abc123) already exists.'
-                  }
-                })
-              })
-            })
-          }
-        }
-        return { insert: vi.fn() }
-      })
-    } as any
-
-    const payload: ConfirmedIngestion = {
-      profile_id: 'u1', chit_id: 'chit1', raw_text: 'txt', content_hash: 'h1', parse_status: 'PARSED',
-      auction_event: { round_number: 5, event_type: 'NORMAL', calculation_status: 'VERIFIED_FORMULA' }
-    }
-
-    const result = await persistConfirmedIngestion(supabase, payload)
-    expect(result.success).toBe(false)
-    // Must NOT be the clean duplicate-round message
-    expect(result.error).not.toBe('Round 5 already exists for this chit.')
-    // Must fall through to the generic DB error
-    expect(result.error).toContain('some_other_unique_constraint')
-  })
-
-  it('Phase 5B — unrelated DB errors pass through without duplicate-round mapping', async () => {
-    // Locks down: non-constraint errors (e.g. FK violation, network) are not swallowed.
-    const supabase = {
-      from: vi.fn((table: string) => {
-        if (table === 'auction_events') {
-          return {
-            insert: vi.fn().mockReturnValue({
-              select: vi.fn().mockReturnValue({
-                single: vi.fn().mockResolvedValue({
-                  data: null,
-                  error: {
-                    code: '23503',
-                    message: 'insert or update on table "auction_events" violates foreign key constraint "auction_events_chit_id_fkey"',
-                    details: 'Key (chit_id)=(nonexistent) is not present in table "chits".'
-                  }
-                })
-              })
-            })
-          }
-        }
-        return { insert: vi.fn() }
-      })
-    } as any
-
-    const payload: ConfirmedIngestion = {
-      profile_id: 'u1', chit_id: 'nonexistent', raw_text: 'txt', content_hash: 'h1', parse_status: 'PARSED',
-      auction_event: { round_number: 1, event_type: 'NORMAL', calculation_status: 'VERIFIED_FORMULA' }
-    }
-
-    const result = await persistConfirmedIngestion(supabase, payload)
-    expect(result.success).toBe(false)
-    expect(result.error).not.toContain('already exists for this chit')
-    expect(result.error).toContain('foreign key constraint')
-  })
-
-  it('Phase 5B — SPECIAL_NO_AUCTION / UNKNOWN financial fields are inserted as explicit SQL null', async () => {
-    // Locks down: financial fields with undefined/UNKNOWN are coalesced to null
-    // (not left as JS undefined which could silently omit the column, hitting DB defaults).
-    let capturedInsertPayload: any = null
-    const supabase = {
-      from: vi.fn((table: string) => {
-        if (table === 'auction_events') {
-          return {
-            insert: vi.fn((data: any) => {
-              capturedInsertPayload = data
-              return {
-                select: vi.fn().mockReturnValue({
-                  single: vi.fn().mockResolvedValue({ data: { id: 'ae-1' }, error: null })
-                })
-              }
-            })
-          }
-        }
-        if (table === 'source_messages') {
-          return {
-            insert: vi.fn().mockReturnValue({
-              select: vi.fn().mockReturnValue({
-                single: vi.fn().mockResolvedValue({ data: { id: 'sm-1' }, error: null })
-              })
-            })
-          }
-        }
-        return { insert: vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ single: vi.fn().mockResolvedValue({ data: { id: 'x' }, error: null }) }) }), update: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }) }
-      })
-    } as any
-
-    // SPECIAL_NO_AUCTION scenario: no financial values provided (all undefined)
-    const payload: ConfirmedIngestion = {
-      profile_id: 'u1', chit_id: 'chit1', raw_text: 'txt', content_hash: 'h1', parse_status: 'PARSED',
-      auction_event: {
-        round_number: 3,
-        event_type: 'SPECIAL_NO_AUCTION',
-        calculation_status: 'VERIFIED_FORMULA'
-        // thallu, commission, net_thallu, member_thallu, non_winner_payment all omitted
-      }
-    }
-
-    await persistConfirmedIngestion(supabase, payload)
-
-    expect(capturedInsertPayload).not.toBeNull()
-    // Each financial field MUST be explicitly null (not undefined) in the DB payload
-    expect(capturedInsertPayload.thallu).toBeNull()
-    expect(capturedInsertPayload.commission).toBeNull()
-    expect(capturedInsertPayload.net_thallu).toBeNull()
-    expect(capturedInsertPayload.member_thallu).toBeNull()
-    expect(capturedInsertPayload.non_winner_payment).toBeNull()
-  })
-
-  // ─── Phase 7C: Multi-Ledger Entry Tests ──────────────────────────────────
-
-  it('Phase 7C.A — NORMAL non-winner: only INSTALLMENT_PAID is inserted (no payout)', async () => {
-    const ledgerInsertArgs: any[] = []
-    const supabase = {
-      from: vi.fn((table: string) => {
-        if (table === 'auction_events') {
-          return {
-            insert: vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ single: vi.fn().mockResolvedValue({ data: { id: 'ae-1' }, error: null }) }) }),
-            update: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) })
-          }
-        }
-        if (table === 'ledger_entries') {
-          return {
-            insert: vi.fn((data: any) => {
-              ledgerInsertArgs.push(data)
-              return { select: vi.fn().mockReturnValue({ single: vi.fn().mockResolvedValue({ data: { id: 'le-1' }, error: null }) }) }
-            })
-          }
-        }
-        return { insert: vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ single: vi.fn().mockResolvedValue({ data: { id: 'sm-1' }, error: null }) }) }), update: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }) }
-      })
-    } as any
-
-    const payload: ConfirmedIngestion = {
-      profile_id: 'u1', chit_id: 'c1', raw_text: 'txt', content_hash: 'h1', parse_status: 'PARSED',
-      auction_event: { round_number: 5, event_type: 'NORMAL', won_by_us: false, calculation_status: 'VERIFIED_FORMULA' },
-      ledger_entries: [
-        { entry_type: 'INSTALLMENT_PAID', amount: 10060, transaction_date: new Date() }
-      ]
-    }
-
-    const result = await persistConfirmedIngestion(supabase, payload)
-    expect(result.success).toBe(true)
-    expect(ledgerInsertArgs).toHaveLength(1)
-    expect(ledgerInsertArgs[0].entry_type).toBe('INSTALLMENT_PAID')
-    expect(ledgerInsertArgs[0].amount).toBe(10060)
-  })
-
-  it('Phase 7C.B — NORMAL winner: both INSTALLMENT_PAID and AUCTION_PAYOUT_RECEIVED are inserted', async () => {
-    const ledgerInsertArgs: any[] = []
-    const supabase = {
-      from: vi.fn((table: string) => {
-        if (table === 'auction_events') {
-          return {
-            insert: vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ single: vi.fn().mockResolvedValue({ data: { id: 'ae-1' }, error: null }) }) }),
-            update: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) })
-          }
-        }
-        if (table === 'ledger_entries') {
-          return {
-            insert: vi.fn((data: any) => {
-              ledgerInsertArgs.push(data)
-              return { select: vi.fn().mockReturnValue({ single: vi.fn().mockResolvedValue({ data: { id: 'le-x' }, error: null }) }) }
-            })
-          }
-        }
-        return { insert: vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ single: vi.fn().mockResolvedValue({ data: { id: 'sm-1' }, error: null }) }) }), update: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }) }
-      })
-    } as any
-
-    const payload: ConfirmedIngestion = {
-      profile_id: 'u1', chit_id: 'c1', raw_text: 'txt', content_hash: 'h1', parse_status: 'PARSED',
-      auction_event: { round_number: 9, event_type: 'NORMAL', won_by_us: true, our_payout_amount: 244000, calculation_status: 'VERIFIED_FORMULA' },
-      ledger_entries: [
-        { entry_type: 'INSTALLMENT_PAID', amount: 10060, transaction_date: new Date() },
-        { entry_type: 'AUCTION_PAYOUT_RECEIVED', amount: 244000, transaction_date: new Date() }
-      ]
-    }
-
-    const result = await persistConfirmedIngestion(supabase, payload)
-    expect(result.success).toBe(true)
-    expect(ledgerInsertArgs).toHaveLength(2)
-    expect(ledgerInsertArgs[0].entry_type).toBe('INSTALLMENT_PAID')
-    expect(ledgerInsertArgs[1].entry_type).toBe('AUCTION_PAYOUT_RECEIVED')
-    expect(ledgerInsertArgs[1].amount).toBe(244000)
-  })
-
-  it('Phase 7C.L — No fabricated AUCTION_PAYOUT_RECEIVED when won_by_us is false', async () => {
-    const ledgerInsertArgs: any[] = []
-    const supabase = {
-      from: vi.fn((table: string) => {
-        if (table === 'auction_events') {
-          return { insert: vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ single: vi.fn().mockResolvedValue({ data: { id: 'ae-1' }, error: null }) }) }) }
-        }
-        if (table === 'ledger_entries') {
-          return {
-            insert: vi.fn((data: any) => {
-              ledgerInsertArgs.push(data)
-              return { select: vi.fn().mockReturnValue({ single: vi.fn().mockResolvedValue({ data: { id: 'le-1' }, error: null }) }) }
-            })
-          }
-        }
-        return { insert: vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ single: vi.fn().mockResolvedValue({ data: { id: 'sm-1' }, error: null }) }) }), update: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }) }
-      })
-    } as any
-
-    // won_by_us is false — ledger_entries only has INSTALLMENT_PAID
-    const payload: ConfirmedIngestion = {
-      profile_id: 'u1', chit_id: 'c1', raw_text: 'txt', content_hash: 'h1', parse_status: 'PARSED',
-      auction_event: { round_number: 3, event_type: 'NORMAL', won_by_us: false, calculation_status: 'VERIFIED_FORMULA' },
-      ledger_entries: [
-        { entry_type: 'INSTALLMENT_PAID', amount: 10060, transaction_date: new Date() }
-      ]
-    }
-
-    await persistConfirmedIngestion(supabase, payload)
-    expect(ledgerInsertArgs).toHaveLength(1)
-    const types = ledgerInsertArgs.map((a: any) => a.entry_type)
-    expect(types).not.toContain('AUCTION_PAYOUT_RECEIVED')
-  })
-
-  it('Phase 7C — backwards compat: deprecated ledger_entry still works', async () => {
-    const ledgerInsertArgs: any[] = []
-    const supabase = {
-      from: vi.fn((table: string) => {
-        if (table === 'auction_events') {
-          return {
-            insert: vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ single: vi.fn().mockResolvedValue({ data: { id: 'ae-1' }, error: null }) }) }),
-            update: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) })
-          }
-        }
-        if (table === 'ledger_entries') {
-          return {
-            insert: vi.fn((data: any) => {
-              ledgerInsertArgs.push(data)
-              return { select: vi.fn().mockReturnValue({ single: vi.fn().mockResolvedValue({ data: { id: 'le-1' }, error: null }) }) }
-            })
-          }
-        }
-        return { insert: vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ single: vi.fn().mockResolvedValue({ data: { id: 'sm-1' }, error: null }) }) }), update: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }) }
-      })
-    } as any
-
-    // Using the deprecated ledger_entry (single)
-    const payload: ConfirmedIngestion = {
-      profile_id: 'u1', chit_id: 'c1', raw_text: 'txt', content_hash: 'h1', parse_status: 'PARSED',
-      auction_event: { round_number: 1, event_type: 'NORMAL', calculation_status: 'VERIFIED_FORMULA' },
-      ledger_entry: { entry_type: 'INSTALLMENT_PAID', amount: 9800, transaction_date: new Date() }
-    }
-
-    const result = await persistConfirmedIngestion(supabase, payload)
-    expect(result.success).toBe(true)
-    expect(ledgerInsertArgs).toHaveLength(1)
-    expect(ledgerInsertArgs[0].entry_type).toBe('INSTALLMENT_PAID')
-    expect(ledgerInsertArgs[0].amount).toBe(9800)
-  })
-
 })
