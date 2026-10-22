@@ -1,6 +1,6 @@
 # Chit Fund Analytics — financial-integrity repair handoff
 
-Updated 22 October 2026 (Asia/Calcutta). This records the bounded repair based on `a62c4b895f18f36e44dfa3ebba8b0ec1edf7f371`. It is not a production-readiness certification.
+Updated 22 October 2026 (Asia/Calcutta). This records the bounded repair and disposable PostgreSQL verification at application commit `77936ccd85f19e19193fbd06a43ec61b9f1f3a8b`. It is not a production-readiness certification.
 
 ## Repository state inspected before the repair
 
@@ -9,10 +9,10 @@ Updated 22 October 2026 (Asia/Calcutta). This records the bounded repair based o
 | Repository | <https://github.com/Nithish-kumar-git/chitfund-analytics> |
 | Checkout | `C:\Users\itsni\Documents\Codex\2026-10-22\task-chit-fund-analytics-fix-confirmed\chitfund-analytics` |
 | Branch / tracking | `main` tracking `origin/main` |
-| Starting HEAD | `a62c4b895f18f36e44dfa3ebba8b0ec1edf7f371` |
-| Starting synchronization | Zero commits ahead and zero behind |
-| Starting working tree | Clean |
-| Latest pre-repair CI | Run 39619933315, successful on the starting HEAD; the workflow still used Node 20 |
+| Verified application commit | `77936ccd85f19e19193fbd06a43ec61b9f1f3a8b` |
+| Branch / synchronization | `main` matched `origin/main`; zero ahead and zero behind |
+| Working tree before closeout | Clean |
+| Repair CI | Run 39692273666 completed successfully on the verified commit using Node 22 |
 
 The earlier implementation reference `d65a9cd9f02005f66951f42a9f8437cd8ebb65ff` remains in history. The README and the prior closeout documentation were preserved; this handoff is the intentional update to the latter.
 
@@ -48,9 +48,19 @@ The migration preflights existing rows and aborts on inconsistent historical dat
 - Lint is not green repository-wide: the existing configuration reports 163 errors and 48 warnings, dominated by existing `no-explicit-any` and React hook findings. This repair did not broaden into a lint cleanup.
 - `npm ci` reported the repository's existing dependency audit findings (3 moderate, 9 high, 2 critical); no broad dependency upgrade was performed.
 
-## PostgreSQL verification limitation
+## Disposable PostgreSQL verification
 
-The SQL regression file covers atomic rollback, round bounds and exact completeness, monotonic invalidation, correction uniqueness/side effects, and cross-owner links. It was not executed: `psql` is unavailable, the installed Docker client has no running engine, and this checkout has no local Supabase configuration. No production or remote database was contacted. Therefore migration execution and real PostgreSQL concurrency behavior remain unverified.
+The migration was verified with PostgreSQL 18.1 native Windows binaries in a fresh cluster listening only on `127.0.0.1:55432`, using a separate `chitfund_verify` database. A minimal synthetic Supabase prerequisite layer supplied `auth.users`, `auth.uid()`, and the `anon`/`authenticated` roles. No production or remote database was contacted.
+
+- All seven tracked migrations applied successfully in filename order, including `20261021225438_financial_integrity_repairs.sql`.
+- `supabase/tests/financial_integrity_regression.sql` passed and rolled back cleanly.
+- A controlled `23514` ingestion failure left zero source-message, auction-event and ledger rows; subsequent transactions succeeded.
+- Two correction sessions overlapped. Session A committed; session B received `23505` on `ledger_entries_one_correction_per_original_uk`; exactly one correction remained and the linked event was `MANUAL_OVERRIDE`.
+- Mutation-first verification waited on the parent lock and then rejected the newly flagged round. In the reverse ordering, the ledger insert waited for verification, committed, and left the parent unverified.
+- Nine inspected composite ownership constraints were validated. Valid rounds `1..duration_months` succeeded; missing and out-of-range rounds were rejected.
+- The server, cluster, database, logs, scripts, outputs and synthetic fixtures were removed after results were collected.
+
+This confirms the PostgreSQL behavior under test. It does not cover GoTrue, the Supabase Data API, or complete client-side RLS integration because the disposable test used a minimal authentication shim.
 
 ## Deployment and permission boundary
 
@@ -58,6 +68,4 @@ No deployment was performed. No production data, RLS policy, production permissi
 
 ## Remaining blockers and freeze decision
 
-Before release or freeze, apply the migration to a disposable PostgreSQL/Supabase instance, run `supabase/tests/financial_integrity_regression.sql`, add a two-session correction/verification race exercise, and confirm the post-push GitHub Actions run. Any preflight failure must be reviewed and repaired through an audited data process; do not edit history automatically.
-
-The bounded code repair is complete, but the project should **not be frozen or called production-ready** until those database and CI checks pass. Identify the repair commit with `git log -1 --format=%H` and verify the remote tip with `git ls-remote origin refs/heads/main`.
+The bounded financial-integrity repair can be frozen at `77936ccd85f19e19193fbd06a43ec61b9f1f3a8b`; its migration, committed SQL regression, concurrency interleavings and CI all passed. Do not describe that conclusion as comprehensive production readiness. A full Supabase Auth/Data API/RLS integration check and confirmation of which commit is deployed remain separate questions. Existing repository-wide lint findings and dependency-audit findings also remain outside this bounded repair.

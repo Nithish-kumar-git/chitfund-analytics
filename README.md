@@ -24,6 +24,8 @@ Screenshots use fictional illustrative data.
 - Calculation paths for normal rounds, `SPECIAL_NO_AUCTION`, final rounds and unknown events.
 - Verification states: `VERIFIED_FORMULA`, `CONFIRM_SOURCE`, `MANUAL_OVERRIDE`, `FLAGGED_MISMATCH` and the legacy/default state used before review.
 - Append-oriented ledger reads, explicit installment and payout recording, manual correction entries, and client-generated idempotency keys for supported forms.
+- Atomic confirmed ingestion that keeps expected auction amounts separate from explicitly recorded cash flow and preserves source dates without inventing missing history.
+- Database-enforced correction uniqueness, exact round bounds, monotonic verification invalidation, and cross-record profile/chit ownership constraints.
 - Completion and verification gates before final ROI is displayed; active chits show actual cash-flow summaries instead.
 - Printable statements, XLSX exports and a Markdown audit export.
 
@@ -41,18 +43,11 @@ Expected values are not automatically proof that money changed hands. Ledger ent
 
 See [docs/financial-model-spec.md](docs/financial-model-spec.md), [docs/roi-engine-audit.md](docs/roi-engine-audit.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-## Known integrity and concurrency limitations
+## Financial-integrity verification
 
-These are current blockers, not proposed fixes or completed repairs:
+The bounded repair at commit `77936ccd85f19e19193fbd06a43ec61b9f1f3a8b` was verified on an isolated PostgreSQL 18.1 cluster. All seven migrations applied in order, the committed SQL regression passed, controlled ingestion failure left no partial source/event/ledger rows, concurrent correction allowed exactly one commit, and both verification/mutation race orderings ended safely. Exact round bounds and nine composite ownership constraints were also exercised.
 
-1. Confirming an imported message can turn a parsed `stated_payment` into an `INSTALLMENT_PAID` ledger entry. A stated or due amount is not necessarily evidence that an installment was paid.
-2. The current confirmation paths assign the confirmation time to `auction_date` and generated ledger `transaction_date` values. Historical event and payment dates therefore require explicit review and correction.
-3. Confirmed ingestion performs multiple Supabase calls sequentially. Auction, ledger and source-message writes are not wrapped in one database transaction, so a mid-sequence failure can leave partial records.
-4. Correction creation uses a read-then-insert check. The schema has no unique constraint ensuring that only one correction references an original entry, so concurrent corrections can both succeed.
-5. Whole-chit cash-flow verification uses an optimistic `updated_at` check, but per-round formula/source confirmation is not uniformly conditional on the previously reviewed state; zero-row and concurrent-update outcomes are not consistently distinguished.
-6. The database does not fully enforce the documented append-only and cross-record invariants. In particular, it does not prohibit updates/deletes to ledger rows, enforce a single correction per original, require correction type/reference pairing, or prove that related profile/chit/event identifiers belong to the same owner.
-
-Until these are repaired and verified against an isolated PostgreSQL/Supabase environment, treat imports, corrections, verification and ROI outputs as review-assisted records rather than an authoritative accounting ledger.
+The disposable test used a minimal Supabase authentication shim. It did not exercise GoTrue, the Supabase Data API, or complete client-side RLS integration, and it does not establish that the repaired commit is deployed. Treat the application as review-assisted financial software rather than an authoritative accounting ledger.
 
 ## Architecture
 
@@ -72,7 +67,7 @@ Stack: Next.js 16, React 19, TypeScript 5, Tailwind CSS 4, Supabase Auth/Postgre
 
 ## Local setup
 
-Requires Node.js 20+ and npm. From the repository root:
+Requires Node.js 22+ and npm. From the repository root:
 
 ```powershell
 npm ci
@@ -99,12 +94,12 @@ npm run lint
 npm run build
 ```
 
-GitHub Actions runs install, tests, type-checking and build for pushes and pull requests to `main`. The previously documented 518-test result belongs to the existing application checkpoint and was **not rerun for this documentation closeout**.
+GitHub Actions runs install, tests, type-checking and build for pushes and pull requests to `main`. The repair checkpoint passed 498 tests with 17 placeholder integration tests intentionally skipped; focused database behavior was verified separately in disposable PostgreSQL.
 
 ## Deployment status
 
-Vercel reports the production deployment as `READY` from commit `d65a9cd9f02005f66951f42a9f8437cd8ebb65ff`. A read-only HTTP check on 21 October 2026 returned `200` after redirecting to `/login`. This confirms availability and deployment metadata, not correctness of financial records or resolution of the blockers above.
+The last recorded deployment evidence identifies commit `d65a9cd9f02005f66951f42a9f8437cd8ebb65ff` as `READY`. This documentation closeout did not deploy or establish that the verified repair commit is live.
 
 ## Project status
 
-Do not freeze this project as production-ready. The documentation can be frozen at this checkpoint, but code work remains for import semantics, historical dates, atomic ingestion, correction concurrency, verification races and stronger database constraints.
+The bounded financial-integrity repair can be frozen at commit `77936ccd85f19e19193fbd06a43ec61b9f1f3a8b`. This is not a production-readiness certification: deployment status and full Supabase Auth/Data API/RLS integration remain separate verification questions, and the repository retains documented lint and dependency-audit findings.
