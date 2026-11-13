@@ -2,6 +2,11 @@
 
 Updated 22 October 2026 (Asia/Calcutta). This records the bounded repair and disposable PostgreSQL verification at application commit `77936ccd85f19e19193fbd06a43ec61b9f1f3a8b`. It is not a production-readiness certification.
 
+Production update, 13 November 2026: The same reviewed SQL was applied to the
+`chitfund-analytics` Supabase project as migration `20261113003504`. The tracked
+file was renamed to match the production migration history. The four financial
+tables had identical row counts and content fingerprints before and after.
+
 ## Repository state inspected before the repair
 
 | Item | Verified value |
@@ -33,7 +38,7 @@ The migration preflights existing rows and aborts on inconsistent historical dat
 
 - Application actions: ingestion, queue confirmation, ledger correction and verification.
 - Ingestion/date support: persistence payloads, source-date extraction and database function types.
-- Database: `supabase/migrations/20261021225438_financial_integrity_repairs.sql`.
+- Database: `supabase/migrations/20261113003504_financial_integrity_repairs.sql`.
 - Database regression specification: `supabase/tests/financial_integrity_regression.sql`.
 - Focused Vitest coverage for dates, atomic RPC payloads, due-versus-paid semantics, bounds, correction conflicts and locked verification.
 - CI runtime: `.github/workflows/ci.yml`.
@@ -52,7 +57,7 @@ The migration preflights existing rows and aborts on inconsistent historical dat
 
 The migration was verified with PostgreSQL 18.1 native Windows binaries in a fresh cluster listening only on `127.0.0.1:55432`, using a separate `chitfund_verify` database. A minimal synthetic Supabase prerequisite layer supplied `auth.users`, `auth.uid()`, and the `anon`/`authenticated` roles. No production or remote database was contacted.
 
-- All seven tracked migrations applied successfully in filename order, including `20261021225438_financial_integrity_repairs.sql`.
+- All seven migration statements applied successfully in filename order in the disposable test. The financial-integrity SQL is now tracked as `20261113003504_financial_integrity_repairs.sql` to match production.
 - `supabase/tests/financial_integrity_regression.sql` passed and rolled back cleanly.
 - A controlled `23514` ingestion failure left zero source-message, auction-event and ledger rows; subsequent transactions succeeded.
 - Two correction sessions overlapped. Session A committed; session B received `23505` on `ledger_entries_one_correction_per_original_uk`; exactly one correction remained and the linked event was `MANUAL_OVERRIDE`.
