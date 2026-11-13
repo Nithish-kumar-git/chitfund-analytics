@@ -1,19 +1,21 @@
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import type { Database } from '@/types/database'
+import { boundedSupabaseFetch, createBoundedSupabaseFetch } from './fetch'
 
 /**
  * Server-side Supabase client.
  * Use in Server Components, Route Handlers, and Server Actions.
  * Reads cookies for session management via @supabase/ssr.
  */
-export async function createClient() {
+export async function createClient(authSignal?: AbortSignal) {
   const cookieStore = await cookies()
 
   return createServerClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      global: { fetch: authSignal ? createBoundedSupabaseFetch(authSignal) : boundedSupabaseFetch },
       cookies: {
         getAll() {
           return cookieStore.getAll()
